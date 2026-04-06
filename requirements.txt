@@ -1,0 +1,7 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+sqlalchemy>=2.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+# PostgreSQL-Treiber (optional, nur fuer Prod-Deployment mit PostgreSQL)
+# psycopg2-binary>=2.9.0
