@@ -465,14 +465,12 @@ def scrape(days: int, land: str = None):
     _buyer_cache.clear()
     db = SessionLocal()
 
-    cpv_filter = " OR ".join(f"PC={p}*" for p in CPV_PRAEFIX)
+    cpv_filter = " OR ".join(f"classification-cpv={p}*" for p in CPV_PRAEFIX)
     d_von = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
     d_bis = datetime.now().strftime("%Y%m%d")
 
-    land_filter = f" AND CY={land.upper()}" if land else ""
-    # KEIN TD-Filter in der Query — alle Notice-Typen holen, danach nach TD trennen
-    # (TD=3/TD=7 Filter in der Query liefert 0 Ergebnisse bei manchen API-Versionen)
-    base_query  = f"({cpv_filter}){land_filter} AND PD>={d_von} AND PD<={d_bis}"
+    land_filter = f" AND buyer-country={land.upper()}" if land else ""
+    base_query  = f"({cpv_filter}){land_filter} AND publication-date>={d_von} AND publication-date<={d_bis}"
 
     log.info("=" * 60)
     log.info(f"TED OCDS-Scraper gestartet | letzte {days} Tage{' | ' + land if land else ''}")
@@ -629,8 +627,8 @@ def scrape_historisch(tage_gesamt: int = 365, chunk_tage: int = 14,
     db = SessionLocal()
 
     heute = datetime.now().date()
-    cpv_filter = " OR ".join(f"PC={p}*" for p in CPV_PRAEFIX)
-    land_filter = f" AND CY={land.upper()}" if land else ""
+    cpv_filter = " OR ".join(f"classification-cpv={p}*" for p in CPV_PRAEFIX)
+    land_filter = f" AND buyer-country={land.upper()}" if land else ""
 
     log.info("=" * 60)
     log.info(f"Historischer Scrape: {tage_gesamt} Tage, Chunks à {chunk_tage} Tage")
@@ -660,7 +658,7 @@ def scrape_historisch(tage_gesamt: int = 365, chunk_tage: int = 14,
             continue
 
         chunk_num += 1
-        query = f"({cpv_filter}){land_filter} AND PD>={d_von_str} AND PD<={d_bis_str}"
+        query = f"({cpv_filter}){land_filter} AND publication-date>={d_von_str} AND publication-date<={d_bis_str}"
         log.info(f"Chunk {chunk_num}: {d_von_str}–{d_bis_str}")
 
         _buyer_cache.clear()
