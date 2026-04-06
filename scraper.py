@@ -169,7 +169,6 @@ def fetch_all(query: str, doc_type_label: str = "") -> list[dict]:
     for seite in range(1, 10_000):
         data = api_post({
             "query":  query,
-            "fields": FELDER,
             "page":   seite,
             "limit":  SEITEN_GROESSE,
         })
