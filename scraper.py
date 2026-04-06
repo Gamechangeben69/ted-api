@@ -171,6 +171,7 @@ def fetch_all(query: str, doc_type_label: str = "") -> list[dict]:
             "query":  query,
             "page":   seite,
             "limit":  SEITEN_GROESSE,
+            "scope":  "ALL",
         })
         if data is None:
             log.error("API-Fehler, Abbruch.")
