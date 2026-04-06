@@ -44,7 +44,12 @@ CPV_PRAEFIX    = ["72", "48", "30"]
 SEITEN_GROESSE = 50
 PAUSE_SEK      = 0.4
 MAX_VERSUCHE   = 3
-FELDER         = ["ND", "PD", "TD", "FT", "TI", "AU", "RP", "PC", "DD", "CY", "NC", "PR", "AC", "OJ", "FORM"]
+FELDER         = ["ND", "PD", "TD", "FT", "TI", "AU", "RP", "PC", "DD", "CY", "NC", "PR", "AC", "OJ",
+                  "publication-number", "publication-date", "notice-type", "form-type",
+                  "buyer-name", "buyer-country", "buyer-city", "buyer-post-code",
+                  "procedure-type", "deadline", "dispatch-date",
+                  "title-lot", "description-lot", "estimated-value-lot",
+                  "classification-cpv", "AA", "BI", "links"]
 
 # Bezeichnungen für numerische Codes
 TD_MAP = {
@@ -171,7 +176,7 @@ def fetch_all(query: str, doc_type_label: str = "") -> list[dict]:
             "query":  query,
             "page":   seite,
             "limit":  SEITEN_GROESSE,
-            "scope":  "ALL",
+            "fields": FELDER,
         })
         if data is None:
             log.error("API-Fehler, Abbruch.")
