@@ -13,6 +13,12 @@ Tabellen:
 import os
 from datetime import datetime
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass
+
 from sqlalchemy import (
     BigInteger, Column, Date, DateTime, Float, ForeignKey,
     Integer, String, Text, Index, create_engine,
@@ -73,7 +79,7 @@ class Tender(Base):
 
     # TED-Metadaten
     ted_url           = Column(String(300))
-    doc_type          = Column(String(5))    # z. B. "3"
+    doc_type          = Column(String(30))   # z. B. "3", "cn", "can-social"
     doc_type_label    = Column(String(100))  # z. B. "Contract Notice"
     published_date    = Column(Date, index=True)
     deadline_date     = Column(Date, index=True, nullable=True)

@@ -86,6 +86,11 @@ TD_MAP = {
     "pin-cfc":      "Prior Information Notice (CFC)",
     "veat":         "Voluntary ex-ante Transparency Notice",
     "corr":         "Corrigendum",
+    "competition":  "Contract Notice (Competition)",
+    "result":       "Contract Award Notice (Result)",
+    "dir-awa-pre":  "Direct Award (Pre-announcement)",
+    "cont-modif":   "Contract Modification",
+    "planning":     "Prior Information Notice (Planning)",
 }
 
 NC_MAP = {
@@ -196,11 +201,21 @@ def fetch_all(query: str, doc_type_label: str = "") -> list[dict]:
 def map_notice(n: dict) -> dict:
     """Mappt ein TED-Notice-Objekt auf ein normalisiertes Dict."""
     nd    = str(einzel(n.get("ND", "")) or "").strip()
-    # TD (alt) oder FT (eForms) — welches auch immer befüllt ist
-    _td_raw = einzel(n.get("TD") or n.get("FT") or n.get("FORM") or "")
-    td    = str(_td_raw or "").strip()
+    # FT (eForms form-type) bevorzugen; TD nur wenn kurzer Typcode (altes Format)
+    _ft_raw = n.get("form-type") or n.get("notice-type") or n.get("FT") or ""
+    _ft = str(einzel(_ft_raw) or "").strip()
+    _td_raw = n.get("TD")
+    _td = ""
+    if isinstance(_td_raw, str) and len(_td_raw) <= 20:
+        _td = _td_raw.strip()
+    elif isinstance(_td_raw, list) and _td_raw and isinstance(_td_raw[0], str) and len(_td_raw[0]) <= 20:
+        _td = _td_raw[0].strip()
+    td = (_ft or _td)[:20]
     pc    = n.get("PC", [])
-    cy    = str(einzel(n.get("CY", "")) or "").strip()
+    _cy_raw = n.get("CY", "")
+    if isinstance(_cy_raw, list):
+        _cy_raw = _cy_raw[0] if _cy_raw else ""
+    cy = str(einzel(_cy_raw) or "").strip()[:3]
     # RP = NUTS region (alt). eForms kann auch RPC oder PLACE nutzen.
     nuts_raw = n.get("RP") or n.get("RPC") or n.get("PLACE") or ""
     nuts  = str(einzel(nuts_raw) or "").strip()
@@ -492,7 +507,7 @@ def scrape(days: int, land: str = None):
         Normalisiert den Notice-Typ auf einen vergleichbaren String.
         Prüft TD, FT und FORM (verschiedene API-Versionen liefern verschiedene Felder).
         """
-        for field in ("TD", "FT", "FORM"):
+        for field in ("TD", "FT", "FORM", "form-type", "notice-type"):
             raw = n.get(field)
             if raw is None:
                 continue
@@ -513,12 +528,17 @@ def scrape(days: int, land: str = None):
         "cn-social", # Social services
         "pin",       # Prior Information Notice (auch oft mit Bewerbungsaufforderung)
         "F01", "1",
+        "competition", # TED v3 eForms: offener Wettbewerb
+        "planning",    # TED v3: Planungsbekanntmachung
+        "veat",        # Voluntary ex-ante transparency notice
+        "dir-awa-pre", # Direktvergabe Vorabbekanntmachung
     }
     AN_VALUES = {
         "7", "F03", "CONTRACT_AWARD_NOTICE", "ContractAwardNotice", "contract_award_notice",
         "can",       # eForms FT-Wert für Contract Award Notice
         "can-social","can-desg",
         "F20", "20",
+        "result",    # TED v3 eForms award/result notice
     }
 
     cn_raw   = [n for n in alle_raw if td_value(n) in CN_VALUES]
