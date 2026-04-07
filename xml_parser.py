@@ -213,10 +213,11 @@ def _extract_lots(root: ET.Element) -> list[dict]:
         lot_id_text = _text(lot_el, "cbc:ID")
         lot_num = None
         if lot_id_text:
-            try:
-                lot_num = int(lot_id_text)
-            except ValueError:
-                lot_num = None
+            # eForms: "LOT-0001" → 1, classic: "1" → 1
+            import re as _re
+            m = _re.search(r'(\d+)$', lot_id_text)
+            if m:
+                lot_num = int(m.group(1))
 
         title = _text(lot_el, "cac:ProcurementProject", "cbc:Name")
         description = _text(lot_el, "cac:ProcurementProject", "cbc:Description")
@@ -622,6 +623,16 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
                     tender.country_label = nuts_info.get("country", "")
             except Exception:
                 pass
+
+    # Deadline auf Tender schreiben: früheste Lot-Einreichungsfrist
+    lot_deadlines = [
+        l.get("deadline") for l in data.get("lots", []) if l.get("deadline")
+    ]
+    if lot_deadlines:
+        earliest = min(lot_deadlines)
+        # Nur überschreiben wenn noch nicht gesetzt oder XML-Wert abweicht
+        if not tender.deadline_date or earliest != tender.deadline_date:
+            tender.deadline_date = earliest
 
     # 3. Awards (Zuschläge) speichern
     for award_data in data["awards"]:
