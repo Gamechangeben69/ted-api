@@ -221,6 +221,7 @@ def _clean_label(raw: Optional[str], mapping: dict, fallback: str = "") -> str:
 
 
 _TD_LABEL_MAP = {
+    # Classic TED codes
     "3": "Contract Notice", "F02": "Contract Notice",
     "cn": "Contract Notice", "cn-desg": "Contract Notice",
     "cn-social": "Contract Notice",
@@ -228,6 +229,14 @@ _TD_LABEL_MAP = {
     "can": "Contract Award Notice", "can-social": "Contract Award Notice",
     "1": "Prior Information Notice", "F01": "Prior Information Notice",
     "pin": "Prior Information Notice",
+    # eForms form-type codes
+    "competition": "Contract Notice",
+    "result": "Contract Award Notice",
+    "dir-awa-pre": "Direct Award Prenotification",
+    "cont-modif": "Contract Modification Notice",
+    "planning": "Prior Information Notice",
+    "veat": "Voluntary Ex Ante Transparency Notice",
+    "corr": "Corrigendum",
 }
 
 
@@ -275,6 +284,17 @@ def tender_to_dict(t: Tender, detail: bool = False) -> dict:
         "award_notice_id": t.award_notice_id,
         "has_award":       bool(t.awards),
         "lot_count":       len(t.lots),
+        "total_estimated_value": sum(
+            l.estimated_value for l in t.lots if l.estimated_value
+        ) or None,
+        "currency": next(
+            (l.estimated_currency for l in t.lots if l.estimated_currency), None
+        ),
+        "active": (
+            t.deadline_date is None or t.deadline_date >= __import__("datetime").date.today()
+        ) if t.deadline_date is not None else (
+            t.doc_type in ("competition", "3", "cn", "cn-desg", "cn-social", "F02")
+        ),
     }
 
     if detail:
