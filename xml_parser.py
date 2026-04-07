@@ -497,33 +497,18 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
         else:
             log.debug(f"  Original-Notice {prior_ref} noch nicht in DB")
 
-    # 2. Lose speichern / aktualisieren
-    for lot_data in data["lots"]:
-        # Prüfen ob Lot schon existiert (nach lot_number)
-        existing_lot = None
-        if lot_data["lot_number"] is not None:
-            existing_lot = (
-                db.query(Lot)
-                .filter(Lot.tender_id == tender_id, Lot.lot_number == lot_data["lot_number"])
-                .first()
-            )
+    # 2. Lose speichern – erst alle bestehenden löschen, dann frisch einfügen
+    #    (verhindert Duplikate bei Re-Enrichment, da lot_number oft None ist)
+    import json as _json
+    if data["lots"]:
+        db.query(Lot).filter(Lot.tender_id == tender_id).delete(synchronize_session=False)
+        db.flush()
 
-        import json as _json
+    for lot_data in data["lots"]:
         cpv_json = _json.dumps(lot_data["cpv_codes"]) if lot_data["cpv_codes"] else None
 
-        if existing_lot:
-            # Fehlende Felder auffüllen
-            if not existing_lot.title:
-                existing_lot.title = lot_data["title"]
-            if not existing_lot.description:
-                existing_lot.description = lot_data["description"]
-            if existing_lot.estimated_value is None and lot_data["estimated_value"]:
-                existing_lot.estimated_value = lot_data["estimated_value"]
-                existing_lot.estimated_currency = lot_data["currency"]
-            if existing_lot.deadline_date is None and lot_data["deadline"]:
-                existing_lot.deadline_date = lot_data["deadline"]
-            if not existing_lot.cpv_codes and cpv_json:
-                existing_lot.cpv_codes = cpv_json
+        if False:  # dead branch – kept for indentation alignment
+            pass
         else:
             new_lot = Lot(
                 tender_id=tender_id,
@@ -536,7 +521,7 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
                 deadline_date=lot_data["deadline"],
             )
             db.add(new_lot)
-            db.flush()  # ID erzeugen
+            db.flush()
 
     # Primären NUTS-Code auf Tender schreiben
     if data.get("lots"):
