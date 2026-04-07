@@ -289,106 +289,189 @@ def _extract_lots(root: ET.Element) -> list[dict]:
 
 def _extract_awards(root: ET.Element) -> list[dict]:
     """
-    Extrahiert Vergabe-/Zuschlagsinformationen.
-    Sucht in SettledContract, AwardedTenderedProject und LotAwardNotice.
-    Gibt eine Liste von Dicts zurück:
-      {"lot_id_text", "supplier_name", "supplier_country", "contract_value",
-       "currency", "offers_received", "award_date"}
+    Extrahiert Vergabe-/Zuschlagsinformationen aus eForms XML.
+
+    eForms-Referenzkette:
+      LotResult → LotTender(rank=1) → TenderingParty → Tenderer(ORG-x)
+      Organizations/Organization(ORG-x) → Company/PartyName → Name
+
+    Gibt Liste von Dicts zurück:
+      {lot_id_text, supplier_name, supplier_country,
+       contract_value, currency, offers_received, award_date}
     """
+    EXT = "http://data.europa.eu/p27/eforms-ubl-extension-aggregate-components/1"
+    EBC = "http://data.europa.eu/p27/eforms-ubl-extension-basic-components/1"
+    CAC = NS["cac"]
+    CBC = NS["cbc"]
+
+    def T(ns, local):
+        return "{%s}%s" % (ns, local)
+
+    def first_text(el, *tag_pairs):
+        """Sucht den Text des ersten gefundenen Tags (ns, local)."""
+        for ns, local in tag_pairs:
+            found = el.find(".//%s" % T(ns, local))
+            if found is not None and found.text:
+                return found.text.strip()
+        return None
+
     awards = []
 
-    # eForms: efac:LotResult Elemente (enthalten Zuschlagsdetails)
-    for result_el in root.findall(".//efac:LotResult", NS):
-        # Lot-Referenz
-        lot_ref = _text(result_el, "efac:TenderLot", "cbc:ID")
-        if not lot_ref:
-            lot_ref = _text(result_el, "cbc:ID")
+    # ── 1. Organization-Map aufbauen: org_id → {name, country} ──────────────
+    org_map = {}
+    for org_el in root.iter(T(EXT, "Organization")):
+        # ID: efac:Company/cac:PartyIdentification/cbc:ID  (= "ORG-0001")
+        company_el = org_el.find(T(EXT, "Company"))
+        if company_el is None:
+            continue
+        party_id_el = company_el.find(
+            "%s/%s" % (T(CAC, "PartyIdentification"), T(CBC, "ID"))
+        )
+        org_id = party_id_el.text.strip() if party_id_el is not None and party_id_el.text else None
+        if not org_id:
+            continue
+        # Name: Company/cac:PartyName/cbc:Name
+        name_el = company_el.find(
+            "%s/%s" % (T(CAC, "PartyName"), T(CBC, "Name"))
+        )
+        name = name_el.text.strip() if name_el is not None and name_el.text else None
+        # Country: PostalAddress/Country/cbc:IdentificationCode
+        country_el = company_el.find(
+            ".//%s" % T(CBC, "IdentificationCode")
+        )
+        country = country_el.text.strip() if country_el is not None and country_el.text else None
+        if org_id not in org_map:
+            org_map[org_id] = {"name": name, "country": country}
 
-        # Vertragswert
-        val_text = _text(result_el, "efac:SettledContract", "cbc:PayableAmount")
-        if not val_text:
-            val_text = _text(result_el, "cbc:AwardedValue", "cbc:Amount")
-        currency = _attr(result_el, "cbc:AwardedValue", "cbc:Amount", attr="currencyID")
+    # ── 2. TenderingParty-Map: tp_id → [org_id, ...] ────────────────────────
+    tp_map = {}
+    for tp_el in root.iter(T(EXT, "TenderingParty")):
+        tp_id_el = tp_el.find(T(CBC, "ID"))
+        tp_id = tp_id_el.text.strip() if tp_id_el is not None and tp_id_el.text else None
+        if not tp_id:
+            continue
+        tenderers = []
+        for tenderer_el in tp_el.findall(T(EXT, "Tenderer")):
+            org_id_el = tenderer_el.find(T(CBC, "ID"))
+            if org_id_el is not None and org_id_el.text:
+                tenderers.append(org_id_el.text.strip())
+        # Prefer the entry that has Tenderer references (not just the reference stub)
+        if tp_id not in tp_map or (tenderers and not tp_map[tp_id]):
+            tp_map[tp_id] = tenderers
 
-        # Angebotszahl
-        offers_text = _text(result_el, "efac:ReceivedSubmissionsStatistics", "efbc:StatisticsNumeric")
-        offers = None
-        if offers_text:
-            try:
-                offers = int(float(offers_text))
-            except ValueError:
-                offers = None
+    # ── 3. LotTender-Map: lt_id → {payable, currency, tp_id, rank} ──────────
+    lt_map = {}
+    for lt_el in root.iter(T(EXT, "LotTender")):
+        lt_id_el = lt_el.find(T(CBC, "ID"))
+        lt_id = lt_id_el.text.strip() if lt_id_el is not None and lt_id_el.text else None
+        if not lt_id:
+            continue
+        rank_el = lt_el.find(T(CBC, "RankCode"))
+        rank = rank_el.text.strip() if rank_el is not None and rank_el.text else None
 
-        # Award-Datum über SettledContract
-        award_date_text = _text(result_el, "efac:SettledContract", "cbc:IssueDate")
-        if not award_date_text:
-            award_date_text = _text(result_el, "cbc:AwardDate")
+        # Vertragswert: cac:LegalMonetaryTotal/cbc:PayableAmount
+        payable_el = lt_el.find(".//%s" % T(CBC, "PayableAmount"))
+        payable = _float(payable_el.text) if payable_el is not None and payable_el.text else None
+        currency = payable_el.get("currencyID") if payable_el is not None else None
 
-        # Gewinner über LotAward > WinningParty
-        winner_name = ""
-        winner_country = ""
+        # TenderingParty-Referenz
+        tp_ref_el = lt_el.find(".//%s/%s" % (T(EXT, "TenderingParty"), T(CBC, "ID")))
+        tp_id = tp_ref_el.text.strip() if tp_ref_el is not None and tp_ref_el.text else None
 
-        for winner_el in result_el.findall(".//cac:WinningParty", NS):
-            party_name_el = winner_el.find("cac:PartyName/cbc:Name", NS)
-            if party_name_el is not None and party_name_el.text:
-                winner_name = party_name_el.text.strip()
-            country_el = winner_el.find("cac:PartyIdentification/cbc:ID", NS)
-            if country_el is not None and country_el.text:
-                winner_country = country_el.text.strip()
-            if winner_name:
+        # Nur den Eintrag mit Rang 1 (Gewinner) speichern, oder ersten falls kein Rang
+        if lt_id not in lt_map or rank == "1":
+            lt_map[lt_id] = {
+                "payable":  payable,
+                "currency": currency,
+                "tp_id":    tp_id,
+                "rank":     rank,
+            }
+
+    # ── 4. LotResult verarbeiten ─────────────────────────────────────────────
+    for lr_el in root.iter(T(EXT, "LotResult")):
+        # Welches Los?
+        lot_ref = first_text(lr_el, (EXT, "TenderLot"), (CBC, "ID")) or                   first_text(lr_el, (CBC, "ID"))
+
+        # Welches LotTender wurde vergeben?
+        awarded_lt_id = None
+        for lt_ref_el in lr_el.findall(".//%s" % T(EXT, "LotTender")):
+            lt_id_el = lt_ref_el.find(T(CBC, "ID"))
+            if lt_id_el is not None and lt_id_el.text:
+                awarded_lt_id = lt_id_el.text.strip()
                 break
 
-        # Falls kein WinningParty: versuche AwardedTenderedProject
-        if not winner_name:
-            for atp in result_el.findall(".//cac:AwardedTenderedProject", NS):
-                for party in atp.findall(".//cac:PartyName/cbc:Name", NS):
-                    winner_name = (party.text or "").strip()
-                    if winner_name:
+        # Anzahl Angebote
+        offers_el = lr_el.find(".//%s" % T(EBC, "StatisticsNumeric"))
+        offers = None
+        if offers_el is not None and offers_el.text:
+            try:
+                offers = int(float(offers_el.text))
+            except (ValueError, TypeError):
+                pass
+
+        # Award-Datum (SettledContract/IssueDate)
+        award_date_text = first_text(lr_el, (EXT, "SettledContract"), (CBC, "IssueDate")) or                           first_text(lr_el, (CBC, "AwardDate"))
+
+        # Gewinner über LotTender → TenderingParty → Organization
+        supplier_name    = None
+        supplier_country = None
+        contract_value   = None
+        currency         = "EUR"
+
+        if awarded_lt_id and awarded_lt_id in lt_map:
+            lt_info = lt_map[awarded_lt_id]
+            contract_value = lt_info["payable"]
+            currency       = lt_info["currency"] or "EUR"
+            tp_id          = lt_info["tp_id"]
+
+            if tp_id and tp_id in tp_map:
+                org_ids = tp_map[tp_id]
+                for org_id in org_ids:
+                    if org_id in org_map and org_map[org_id]["name"]:
+                        supplier_name    = org_map[org_id]["name"]
+                        supplier_country = org_map[org_id]["country"]
                         break
 
-        if val_text or winner_name:
+        # Fallback: SettledContract/PayableAmount für Wert
+        if contract_value is None:
+            payable_el = lr_el.find(".//%s" % T(CBC, "PayableAmount"))
+            if payable_el is not None and payable_el.text:
+                contract_value = _float(payable_el.text)
+                currency = payable_el.get("currencyID", "EUR")
+
+        if supplier_name or contract_value is not None:
             awards.append({
-                "lot_id_text":    lot_ref,
-                "supplier_name":  winner_name[:500] if winner_name else None,
-                "supplier_country": winner_country[:3] if winner_country else None,
-                "contract_value": _float(val_text),
-                "currency":       currency or "EUR",
+                "lot_id_text":     lot_ref,
+                "supplier_name":   supplier_name[:500] if supplier_name else None,
+                "supplier_country": (supplier_country or "")[:3] or None,
+                "contract_value":  contract_value,
+                "currency":        currency,
                 "offers_received": offers,
-                "award_date":     _parse_date(award_date_text),
+                "award_date":      _parse_date(award_date_text),
             })
 
-    # Fallback: altes Format — AWARDED_CONTRACT Elemente
+    # ── Fallback: altes TED-XML-Format (F03, cac:AwardedTenderedProject) ─────
     if not awards:
-        for ac_el in root.iter("AWARDED_CONTRACT"):
-            val_text = ""
-            for tag in ["VAL_TOTAL", "VAL_ESTIMATED_TOTAL"]:
-                el = ac_el.find(tag)
-                if el is not None and el.text:
-                    val_text = el.text.strip()
-                    break
-            contractor = ac_el.find("CONTRACTOR")
-            winner_name = ""
-            winner_country = ""
-            if contractor is not None:
-                name_el = contractor.find("OFFICIALNAME")
-                winner_name = (name_el.text or "").strip() if name_el is not None else ""
-                country_el = contractor.find("COUNTRY")
-                winner_country = country_el.get("VALUE", "") if country_el is not None else ""
-            if val_text or winner_name:
-                awards.append({
-                    "lot_id_text":     None,
-                    "supplier_name":   winner_name[:500] if winner_name else None,
-                    "supplier_country": winner_country[:3] if winner_country else None,
-                    "contract_value":  _float(val_text),
-                    "currency":        "EUR",
-                    "offers_received": None,
-                    "award_date":      None,
-                })
+        for atp in root.findall(".//cac:AwardedTenderedProject", NS):
+            val_text = _text(atp, "cbc:TotalAmount") or _text(atp, "cac:LegalMonetaryTotal", "cbc:PayableAmount")
+            currency_el = atp.find(".//{%s}TotalAmount" % NS["cbc"])
+            currency = currency_el.get("currencyID", "EUR") if currency_el is not None else "EUR"
+            for party in atp.findall(".//cac:WinningParty", NS):
+                name_el = party.find("cac:PartyName/cbc:Name", NS)
+                country_el = party.find("cac:PostalAddress/cac:Country/cbc:IdentificationCode", NS)
+                if name_el is not None and name_el.text:
+                    awards.append({
+                        "lot_id_text":     None,
+                        "supplier_name":   name_el.text.strip()[:500],
+                        "supplier_country": (country_el.text.strip()[:3] if country_el is not None and country_el.text else None),
+                        "contract_value":  _float(val_text),
+                        "currency":        currency,
+                        "offers_received": None,
+                        "award_date":      None,
+                    })
 
     return awards
 
-
-# ── Referenz auf Original-Ausschreibung (in Award Notices) ───────────────────
 
 def _extract_prior_notice_ref(root: ET.Element) -> Optional[str]:
     """
