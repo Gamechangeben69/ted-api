@@ -253,6 +253,14 @@ def _extract_lots(root: ET.Element) -> list[dict]:
                                "cac:TenderSubmissionDeadlinePeriod",
                                "cbc:EndDate")
 
+        # NUTS-Code
+        _nuts_el = (
+            lot_el.find("cac:RealizedLocation/cbc:ID", NS) or
+            lot_el.find("cac:DeliveryTerms/cac:DeliveryLocation/cbc:ID", NS) or
+            lot_el.find(".//cbc:CountrySubentityCode", NS)
+        )
+        lot_nuts = _nuts_el.text.strip() if _nuts_el is not None and _nuts_el.text else ""
+
         lots.append({
             "lot_number":       lot_num,
             "title":            title[:500] if title else None,
@@ -261,6 +269,7 @@ def _extract_lots(root: ET.Element) -> list[dict]:
             "estimated_value":  _float(val_text),
             "currency":         currency or "EUR",
             "deadline":         _parse_date(deadline_text),
+            "nuts_code":        lot_nuts,
         })
 
     return lots
@@ -515,9 +524,27 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
                 estimated_value=lot_data["estimated_value"],
                 estimated_currency=lot_data["currency"],
                 deadline_date=lot_data["deadline"],
+                nuts_code=lot_data.get("nuts_code", ""),
             )
             db.add(new_lot)
             db.flush()  # ID erzeugen
+
+    # Primären NUTS-Code auf Tender schreiben
+    if data.get("lots"):
+        first_nuts = next(
+            (l.get("nuts_code", "") for l in data["lots"] if l.get("nuts_code")),
+            ""
+        )
+        if first_nuts and not tender.nuts_code:
+            tender.nuts_code = first_nuts
+            try:
+                from enrichment import enrich_nuts
+                nuts_info = enrich_nuts(first_nuts)
+                tender.nuts_label = nuts_info.get("region", "")
+                if not tender.country_label:
+                    tender.country_label = nuts_info.get("country", "")
+            except Exception:
+                pass
 
     # 3. Awards (Zuschläge) speichern
     for award_data in data["awards"]:
