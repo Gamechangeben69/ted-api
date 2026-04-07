@@ -20,11 +20,13 @@ Starten:
 import json
 import os
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from pydantic import BaseModel
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, selectinload
 
 from database import Alert, Award, Buyer, Lot, RateLimit, SessionLocal, Supplier, Tender, get_db, init_db
@@ -307,15 +309,58 @@ def tender_to_dict(t: Tender, detail: bool = False) -> dict:
 
 # ── Endpunkte ─────────────────────────────────────────────────────────────────
 
-@app.get("/health", tags=["System"], include_in_schema=False)
+@app.get("/health", tags=["System"], summary="API health and data coverage stats")
 def health(db: Session = Depends(get_db)):
-    count   = db.query(func.count(Tender.id)).scalar()
-    awards  = db.query(func.count(Award.id)).scalar()
+    """Returns API health status with database coverage statistics."""
+    from sqlalchemy import func as _f
+    total_tenders = db.query(_f.count(Tender.id)).scalar() or 0
+    total_awards  = db.query(_f.count(Award.id)).scalar() or 0
+
+    with_desc  = db.query(_f.count(Tender.id)).filter(Tender.description.isnot(None)).scalar() or 0
+    with_nuts  = db.query(_f.count(Tender.id)).filter(
+        Tender.nuts_code.isnot(None), Tender.nuts_code != ""
+    ).scalar() or 0
+    with_value = (
+        db.query(_f.count(Tender.id.distinct()))
+        .join(Tender.lots)
+        .filter(Lot.estimated_value.isnot(None))
+        .scalar() or 0
+    )
+    active_count = db.query(_f.count(Tender.id)).filter(
+        or_(Tender.deadline_date.is_(None), Tender.deadline_date >= date.today())
+    ).scalar() or 0
+
+    countries = db.query(
+        Tender.country_code, _f.count(Tender.id)
+    ).group_by(Tender.country_code).order_by(_f.count(Tender.id).desc()).limit(10).all()
+
+    last_scraped = db.query(_f.max(Tender.scraped_at)).scalar()
+
     return {
-        "status":          "ok",
-        "tenders_in_db":   count,
-        "awards_in_db":    awards,
-        "ts":              datetime.utcnow().isoformat() + "Z",
+        "status": "ok",
+        "database": {
+            "tenders":       total_tenders,
+            "awards":        total_awards,
+            "active":        active_count,
+            "last_scraped":  last_scraped.isoformat() if last_scraped else None,
+        },
+        "coverage": {
+            "with_description": {
+                "count":   with_desc,
+                "percent": round(with_desc / total_tenders * 100, 1) if total_tenders else 0,
+            },
+            "with_nuts_code": {
+                "count":   with_nuts,
+                "percent": round(with_nuts / total_tenders * 100, 1) if total_tenders else 0,
+            },
+            "with_value": {
+                "count":   with_value,
+                "percent": round(with_value / total_tenders * 100, 1) if total_tenders else 0,
+            },
+        },
+        "top_countries": [
+            {"country_code": cc, "tenders": cnt} for cc, cnt in countries
+        ],
     }
 
 
@@ -326,23 +371,35 @@ def health(db: Session = Depends(get_db)):
     response_description="Paginated list of IT procurement notices",
 )
 def list_tenders(
-    # Geografisch
-    country:   Optional[str] = Query(None, description="3-letter ISO code: `DEU`, `FRA`, `NLD`, `POL` …"),
-    nuts:      Optional[str] = Query(None, description="NUTS region prefix, z. B. `DE2` für Bayern"),
-    # Inhalt
-    cpv:       Optional[str] = Query(None, description="CPV prefix: `72` IT Services, `48` Software, `30` Hardware"),
-    keyword:   Optional[str] = Query(None, description="Freitextsuche in Titel und Auftraggeber"),
-    # Typ
-    doc_type:  Optional[str] = Query(None, description="`3` = Contract Notice, `7` = Award Notice"),
-    has_award: Optional[bool]= Query(None, description="Nur Ausschreibungen mit verknüpftem Zuschlag"),
-    # Zeitraum
-    active:    bool          = Query(True,  description="Nur aktive Ausschreibungen (Deadline >= heute)"),
-    days:      Optional[int] = Query(None,  description="Veröffentlicht innerhalb der letzten N Tage"),
-    date_from: Optional[date]= Query(None,  description="Veröffentlicht ab (YYYY-MM-DD)"),
-    date_to:   Optional[date]= Query(None,  description="Veröffentlicht bis (YYYY-MM-DD)"),
+    request: Request,
+    # Geographic
+    country:       Optional[str]  = Query(None, description="3-letter ISO code: DEU, FRA, NLD …"),
+    nuts:          Optional[str]  = Query(None, description="NUTS region prefix, e.g. DE2 for Bavaria"),
+    # Content
+    cpv:           Optional[str]  = Query(None, description="CPV prefix: 72=IT Services, 48=Software, 30=Hardware"),
+    keyword:       Optional[str]  = Query(None, description="Full-text search in title and description"),
+    # Type
+    doc_type:      Optional[str]  = Query(None, description="3=Contract Notice, 7=Award Notice, competition, result"),
+    has_award:     Optional[bool] = Query(None, description="Only tenders with linked award notice"),
+    # Time
+    active:        bool           = Query(True,  description="Only active tenders (deadline >= today)"),
+    days:          Optional[int]  = Query(None,  description="Published within last N days"),
+    date_from:     Optional[date] = Query(None,  description="Published from (YYYY-MM-DD)"),
+    date_to:       Optional[date] = Query(None,  description="Published to (YYYY-MM-DD)"),
+    deadline_from: Optional[date] = Query(None,  description="Submission deadline from (YYYY-MM-DD)"),
+    deadline_to:   Optional[date] = Query(None,  description="Submission deadline to (YYYY-MM-DD)"),
+    # Value
+    min_value:     Optional[float]= Query(None,  description="Minimum estimated contract value (EUR)"),
+    max_value:     Optional[float]= Query(None,  description="Maximum estimated contract value (EUR)"),
+    # Procedure
+    procedure:     Optional[str]  = Query(None,  description="Procedure code: OPEN, RESTRICTED, NEG-W-CALL …"),
+    buyer_name:    Optional[str]  = Query(None,  description="Partial buyer/authority name search"),
+    # Sort
+    sort_by:       str            = Query("published_date", description="Sort field: published_date, deadline_date, title, relevance"),
+    sort_order:    str            = Query("desc",            description="Sort order: asc or desc"),
     # Pagination
-    page:      int           = Query(1,    ge=1,   description="Seitennummer"),
-    page_size: int           = Query(20,   ge=1, le=100, description="Ergebnisse pro Seite (max 100)"),
+    page:          int            = Query(1,  ge=1,      description="Page number"),
+    page_size:     int            = Query(20, ge=1, le=100, description="Results per page (max 100)"),
     # Auth
     _rate = Depends(check_rate_limit),
     db: Session = Depends(get_db),
@@ -356,65 +413,122 @@ def list_tenders(
         )
     )
 
-    if country:
-        q = q.filter(Tender.country_code == country.upper())
-
-    if nuts:
-        q = q.filter(Tender.nuts_code.startswith(nuts.upper()))
-
-    if cpv:
-        q = q.filter(Tender.cpv_category == cpv)
-
-    if keyword:
-        kw = f"%{keyword}%"
-        q = q.filter(or_(
-            Tender.title.ilike(kw),
-            Tender.description.ilike(kw),
-            Tender.cpv_main_label.ilike(kw),
-            Tender.cpv_category_label.ilike(kw),
-        ))
-
-    if doc_type:
-        q = q.filter(Tender.doc_type == doc_type)
-
-    if has_award is True:
-        q = q.filter(Tender.award_notice_id.isnot(None))
-    elif has_award is False:
-        q = q.filter(Tender.award_notice_id.is_(None))
-
-    if active:
-        q = q.filter(or_(
-            Tender.deadline_date.is_(None),
-            Tender.deadline_date >= date.today(),
-        ))
-
-    if days:
-        q = q.filter(Tender.published_date >= date.today() - timedelta(days=days))
-
-    if date_from:
-        q = q.filter(Tender.published_date >= date_from)
-
-    if date_to:
-        q = q.filter(Tender.published_date <= date_to)
+    q = _apply_tender_filters(
+        q,
+        country=country, nuts=nuts, cpv=cpv, keyword=keyword, doc_type=doc_type,
+        has_award=has_award, active=active, days=days, date_from=date_from, date_to=date_to,
+        deadline_from=deadline_from, deadline_to=deadline_to,
+        min_value=min_value, max_value=max_value,
+        procedure=procedure, buyer_name=buyer_name,
+    )
 
     total   = q.count()
-    results = (
-        q.order_by(Tender.published_date.desc())
-         .offset((page - 1) * page_size)
-         .limit(page_size)
-         .all()
-    )
+    pages   = (total + page_size - 1) // page_size if total else 0
+
+    q = _apply_sort(q, sort_by, sort_order, keyword=keyword)
+    results = q.offset((page - 1) * page_size).limit(page_size).all()
+
+    # Build pagination links
+    base_url = str(request.url).split("?")[0]
+    params   = dict(request.query_params)
+
+    def page_url(p):
+        params["page"] = str(p)
+        return base_url + "?" + "&".join(f"{k}={v}" for k, v in params.items())
+
+    links = {}
+    if page > 1:
+        links["prev"] = page_url(page - 1)
+    if page < pages:
+        links["next"] = page_url(page + 1)
 
     return {
         "meta": {
             "total":     total,
             "page":      page,
             "page_size": page_size,
-            "pages":     (total + page_size - 1) // page_size if total else 0,
+            "pages":     pages,
+            "links":     links,
         },
         "results": [tender_to_dict(t) for t in results],
     }
 
+
+
+
+class TenderSearchRequest(BaseModel):
+    country:       Optional[str]   = None
+    nuts:          Optional[str]   = None
+    cpv:           Optional[str]   = None
+    keyword:       Optional[str]   = None
+    doc_type:      Optional[str]   = None
+    has_award:     Optional[bool]  = None
+    active:        bool            = True
+    days:          Optional[int]   = None
+    date_from:     Optional[date]  = None
+    date_to:       Optional[date]  = None
+    deadline_from: Optional[date]  = None
+    deadline_to:   Optional[date]  = None
+    min_value:     Optional[float] = None
+    max_value:     Optional[float] = None
+    procedure:     Optional[str]   = None
+    buyer_name:    Optional[str]   = None
+    sort_by:       str             = "published_date"
+    sort_order:    str             = "desc"
+    page:          int             = 1
+    page_size:     int             = 20
+
+
+@app.post(
+    "/tenders/search",
+    tags=["Tenders"],
+    summary="Advanced tender search via JSON body",
+    response_description="Paginated list of IT procurement notices",
+)
+def search_tenders(
+    body: TenderSearchRequest,
+    _rate = Depends(check_rate_limit),
+    db: Session = Depends(get_db),
+):
+    """Search tenders with a JSON body (same filters as GET /tenders but POST-friendly
+    for complex queries or long keyword strings)."""
+    page_size = min(max(body.page_size, 1), 100)
+    page      = max(body.page, 1)
+
+    q = (
+        db.query(Tender)
+        .options(
+            selectinload(Tender.buyer),
+            selectinload(Tender.lots),
+            selectinload(Tender.awards).selectinload(Award.supplier),
+        )
+    )
+
+    q = _apply_tender_filters(
+        q,
+        country=body.country, nuts=body.nuts, cpv=body.cpv, keyword=body.keyword,
+        doc_type=body.doc_type, has_award=body.has_award, active=body.active,
+        days=body.days, date_from=body.date_from, date_to=body.date_to,
+        deadline_from=body.deadline_from, deadline_to=body.deadline_to,
+        min_value=body.min_value, max_value=body.max_value,
+        procedure=body.procedure, buyer_name=body.buyer_name,
+    )
+
+    total = q.count()
+    pages = (total + page_size - 1) // page_size if total else 0
+
+    q       = _apply_sort(q, body.sort_by, body.sort_order, keyword=body.keyword)
+    results = q.offset((page - 1) * page_size).limit(page_size).all()
+
+    return {
+        "meta": {
+            "total":     total,
+            "page":      page,
+            "page_size": page_size,
+            "pages":     pages,
+        },
+        "results": [tender_to_dict(t) for t in results],
+    }
 
 @app.get(
     "/tenders/{tender_id}",
