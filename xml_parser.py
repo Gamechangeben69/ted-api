@@ -525,7 +525,6 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
                 estimated_value=lot_data["estimated_value"],
                 estimated_currency=lot_data["currency"],
                 deadline_date=lot_data["deadline"],
-                nuts_code=lot_data.get("nuts_code", ""),
             )
             db.add(new_lot)
             db.flush()  # ID erzeugen
