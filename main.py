@@ -364,6 +364,100 @@ def health(db: Session = Depends(get_db)):
     }
 
 
+# ── Helper: shared tender filter builder ─────────────────────────────────────
+
+def _apply_tender_filters(q, *,
+    country=None, nuts=None, cpv=None, keyword=None, doc_type=None,
+    has_award=None, active=True, days=None, date_from=None, date_to=None,
+    deadline_from=None, deadline_to=None, min_value=None, max_value=None,
+    procedure=None, buyer_name=None,
+):
+    if country:
+        q = q.filter(Tender.country_code == country.upper())
+    if nuts:
+        q = q.filter(Tender.nuts_code.startswith(nuts.upper()))
+    if cpv:
+        q = q.filter(Tender.cpv_category == cpv)
+
+    if keyword:
+        tsq = func.plainto_tsquery("simple", keyword)
+        q = q.filter(
+            or_(
+                Tender.search_vector.op("@@")(tsq),
+                Tender.title.ilike(f"%{keyword}%"),
+            )
+        )
+
+    if doc_type:
+        q = q.filter(Tender.doc_type == doc_type)
+
+    if has_award is True:
+        q = q.filter(Tender.award_notice_id.isnot(None))
+    elif has_award is False:
+        q = q.filter(Tender.award_notice_id.is_(None))
+
+    if active:
+        q = q.filter(or_(
+            Tender.deadline_date.is_(None),
+            Tender.deadline_date >= date.today(),
+        ))
+
+    if days:
+        q = q.filter(Tender.published_date >= date.today() - timedelta(days=days))
+    if date_from:
+        q = q.filter(Tender.published_date >= date_from)
+    if date_to:
+        q = q.filter(Tender.published_date <= date_to)
+
+    if deadline_from:
+        q = q.filter(Tender.deadline_date >= deadline_from)
+    if deadline_to:
+        q = q.filter(Tender.deadline_date <= deadline_to)
+
+    if procedure:
+        q = q.filter(Tender.procedure == procedure.upper())
+
+    if buyer_name:
+        q = q.join(Tender.buyer).filter(Buyer.name.ilike(f"%{buyer_name}%"))
+
+    if min_value is not None or max_value is not None:
+        lot_sub = (
+            q.session.query(
+                Lot.tender_id,
+                func.sum(Lot.estimated_value).label("total_val")
+            )
+            .group_by(Lot.tender_id)
+            .subquery()
+        )
+        q = q.join(lot_sub, Tender.id == lot_sub.c.tender_id)
+        if min_value is not None:
+            q = q.filter(lot_sub.c.total_val >= min_value)
+        if max_value is not None:
+            q = q.filter(lot_sub.c.total_val <= max_value)
+
+    return q
+
+
+def _apply_sort(q, sort_by: str, sort_order: str, keyword: str = None):
+    desc_flag = sort_order.lower() == "desc"
+    col_map = {
+        "published_date": Tender.published_date,
+        "deadline_date":  Tender.deadline_date,
+        "title":          Tender.title,
+    }
+    if sort_by == "relevance" and keyword:
+        tsq = func.plainto_tsquery("simple", keyword)
+        rank_col = func.ts_rank(Tender.search_vector, tsq)
+        q = q.order_by(rank_col.desc() if desc_flag else rank_col.asc())
+    elif sort_by in col_map:
+        col = col_map[sort_by]
+        q = q.order_by(col.desc() if desc_flag else col.asc())
+    else:
+        q = q.order_by(Tender.published_date.desc())
+    return q
+
+
+
 @app.get(
     "/tenders",
     tags=["Tenders"],
