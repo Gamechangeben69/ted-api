@@ -19,6 +19,7 @@ Verwendung:
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
 from datetime import date
 from typing import Optional
@@ -653,22 +654,44 @@ def batch_enrich(limit: int = 100, days_back: int = 30, country: str = None,
         success = 0
         failed = 0
         linked = 0
-        for tender in tenders:
-            ok = enrich_and_save(db, tender.id, force=force)
-            if ok:
-                success += 1
-                # Prüfen ob eine Verknüpfung hergestellt wurde
-                db.expire(tender)
-                refreshed = db.get(Tender, tender.id)
-                if refreshed and refreshed.award_notice_id:
-                    linked += 1
-            else:
-                failed += 1
-            time.sleep(pause)
+        tender_ids = [t.id for t in tenders]
+        db.close()  # close main session before threading
+
+        def _enrich_one(tid):
+            from database import SessionLocal as _SL
+            _db = _SL()
+            try:
+                ok = enrich_and_save(_db, tid, force=force)
+                _linked = 0
+                if ok:
+                    from database import Tender as _T
+                    r = _db.get(_T, tid)
+                    if r and r.award_notice_id:
+                        _linked = 1
+                return ok, _linked
+            finally:
+                _db.close()
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_enrich_one, tid): tid for tid in tender_ids}
+            for fut in as_completed(futures):
+                try:
+                    ok, lnk = fut.result()
+                    if ok:
+                        success += 1
+                        linked += lnk
+                    else:
+                        failed += 1
+                except Exception as exc:
+                    log.warning(f"Worker error for {futures[fut]}: {exc}")
+                    failed += 1
+                time.sleep(pause / 4)
 
         log.info(f"Batch fertig: {success} erfolgreich, {failed} fehlgeschlagen, {linked} neu verknüpft")
+    except Exception:
+        raise
     finally:
-        db.close()
+        pass  # sessions closed inside workers
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

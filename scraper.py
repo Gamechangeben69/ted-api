@@ -853,12 +853,22 @@ if __name__ == "__main__":
                         help="Max. Notices fuer XML-Anreicherung (default: 200)")
     parser.add_argument("--historisch", action="store_true",
                         help="Historischen Backfill starten (--days = wie weit zurueck)")
+    parser.add_argument("--backfill-xml", action="store_true",
+                        help="Fehlende XML-Daten für alle Tender nachladen")
+    parser.add_argument("--backfill-limit", type=int, default=500,
+                        help="Max. Anzahl Tender für --backfill-xml (default: 500)")
     parser.add_argument("--check-alerts", action="store_true",
                         help="Aktive Alerts pruefen und Webhook-Notifications senden")
     args = parser.parse_args()
 
     # Mehrere Laender unterstuetzen: --land DEU,FRA,NLD
     laender = [l.strip().upper() for l in args.land.split(",")] if args.land else [None]
+
+    if args.backfill_xml:
+        from xml_parser import batch_enrich
+        log.info(f"Starte XML-Backfill für bis zu {args.backfill_limit} Tender ...")
+        batch_enrich(limit=args.backfill_limit, days_back=3650, force=False)
+        log.info("XML-Backfill abgeschlossen.")
 
     if args.check_alerts:
         check_alerts(days_back=args.days)
