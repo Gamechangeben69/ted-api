@@ -235,18 +235,27 @@ def _extract_lots(root: ET.Element) -> list[dict]:
                 cpv_codes.append(code)
 
         # Geschätzter Wert
+        # eForms: cac:ProcurementProject/cac:RequestedTenderTotal/cbc:EstimatedOverallContractAmount
         val_text = _text(lot_el,
                          "cac:ProcurementProject",
-                         "cac:RequestedTenderValue",
-                         "cbc:MaximumAmount")
+                         "cac:RequestedTenderTotal",
+                         "cbc:EstimatedOverallContractAmount")
+        if not val_text:
+            val_text = _text(lot_el,
+                             "cac:ProcurementProject",
+                             "cac:RequestedTenderValue",
+                             "cbc:MaximumAmount")
         if not val_text:
             val_text = _text(lot_el,
                              "cac:ProcurementProject",
                              "cbc:EstimatedOverallContractAmount")
-        currency = _attr(lot_el,
-                         "cac:ProcurementProject",
-                         "cbc:EstimatedOverallContractAmount",
-                         attr="currencyID")
+        # Currency from whichever element has the value
+        currency = (
+            _attr(lot_el, "cac:ProcurementProject", "cac:RequestedTenderTotal",
+                  "cbc:EstimatedOverallContractAmount", attr="currencyID") or
+            _attr(lot_el, "cac:ProcurementProject",
+                  "cbc:EstimatedOverallContractAmount", attr="currencyID")
+        )
 
         # Frist
         deadline_text = _text(lot_el,
