@@ -23,6 +23,7 @@ from sqlalchemy import (
     BigInteger, Column, Date, DateTime, Float, ForeignKey,
     Integer, String, Text, Index, create_engine,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
 # ── DB-Verbindung ─────────────────────────────────────────────────────────────
@@ -119,9 +120,13 @@ class Tender(Base):
     lots              = relationship("Lot",   back_populates="tender", cascade="all, delete-orphan")
     awards            = relationship("Award", back_populates="tender", cascade="all, delete-orphan")
 
+    # Full-text search vector (populated by DB trigger)
+    search_vector     = Column(TSVECTOR, nullable=True)
+
     __table_args__ = (
         Index("ix_country_pub",  "country_code", "published_date"),
         Index("ix_country_dead", "country_code", "deadline_date"),
+        Index("ix_tenders_gin",  "search_vector", postgresql_using="gin"),
     )
 
     def __repr__(self):
