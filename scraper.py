@@ -40,7 +40,15 @@ log = logging.getLogger(__name__)
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
 BASE_URL       = "https://api.ted.europa.eu/v3/notices/search"
-CPV_PRAEFIX    = ["72", "48", "30"]
+CPV_PRAEFIX    = [
+    "72",  # IT Services
+    "48",  # Software
+    "30",  # Hardware / Office Equipment
+    "33",  # Medical Devices & Pharma
+    "71",  # Architecture & Engineering
+    "73",  # Research & Development
+    "79",  # Business Services (Consulting, Legal, Accounting)
+]
 SEITEN_GROESSE = 50
 PAUSE_SEK      = 0.4
 MAX_VERSUCHE   = 3

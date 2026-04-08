@@ -40,7 +40,8 @@ _TAGS = [
         "description": (
             "Search and retrieve EU public procurement notices scraped daily from "
             "[TED (Tenders Electronic Daily)](https://ted.europa.eu/). "
-            "Covers contract notices, award notices, prior information notices and more "
+            "Covers **IT & Software** (CPV 72, 48, 30), **Engineering** (71), "
+            "**Medical Devices** (33), **R&D** (73), **Business Services** (79) "
             "across all 27 EU member states plus Norway, Switzerland and Iceland."
         ),
     },
@@ -80,10 +81,11 @@ app = FastAPI(
     title="TED EU Procurement API",
     description=(
         "## Real-time EU public procurement data\n\n"
-        "Access **6,000+ IT & technology tender notices** from the EU Official Journal "
+        "Access **30,000+ procurement notices** across IT, Engineering, Healthcare, Consulting "
+        "and R&D from the EU Official Journal "
         "([TED — Tenders Electronic Daily](https://ted.europa.eu/)), updated every day.\n\n"
         "### What you get\n"
-        "- **Contract Notices** — open competitions across all 27 EU member states\n"
+        "- **Contract Notices** — IT, Engineering, Healthcare, Consulting & R&D across 27 EU member states\n"
         "- **Contract Awards** — who won, at what price, with how many competing bids\n"
         "- **Supplier Intelligence** — ranked contractors by win count and total value\n"
         "- **Full-text search** — PostgreSQL tsvector search across titles and descriptions\n"
