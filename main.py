@@ -711,13 +711,13 @@ def list_awards(
         q = q.filter(Tender.country_code == country.upper())
 
     if days:
-        q = q.filter(Award.published_date >= date.today() - timedelta(days=days))
+        q = q.filter(Tender.published_date >= date.today() - timedelta(days=days))
 
     if min_value:
         q = q.filter(Award.contract_value >= min_value)
 
     total   = q.count()
-    results = q.order_by(Award.published_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    results = q.order_by(Tender.published_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     def _fmt(a: Award):
         return {
@@ -899,7 +899,7 @@ def get_supplier_awards(
         .filter(Award.supplier_id == supplier_id)
     )
     total   = q.count()
-    results = q.order_by(Award.published_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    results = q.order_by(Award.award_date.desc().nullslast()).offset((page - 1) * page_size).limit(page_size).all()
 
     return {
         "supplier": {
