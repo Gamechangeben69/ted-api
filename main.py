@@ -25,6 +25,8 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from fastapi import Response, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, selectinload
@@ -113,6 +115,53 @@ app = FastAPI(
     openapi_tags=_TAGS,
     docs_url="/",
 )
+
+# ── Konsistentes Error-Format ─────────────────────────────────────────────────
+
+_STATUS_SLUG = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    405: "method_not_allowed",
+    409: "conflict",
+    422: "validation_error",
+    429: "rate_limit_exceeded",
+    500: "internal_error",
+    503: "service_unavailable",
+}
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    slug = _STATUS_SLUG.get(exc.status_code, "error")
+    if isinstance(exc.detail, dict):
+        # Already structured (e.g. 429) — merge status in
+        body = {"status": exc.status_code, **exc.detail}
+        # Ensure "error" key is present
+        body.setdefault("error", slug)
+    else:
+        body = {
+            "error":   slug,
+            "status":  exc.status_code,
+            "message": str(exc.detail) if exc.detail else slug.replace("_", " ").title(),
+        }
+    return JSONResponse(status_code=exc.status_code, content=body)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error":   "validation_error",
+            "status":  422,
+            "message": "Invalid request parameters.",
+            "detail":  exc.errors(),
+        },
+    )
+
+
 
 app.add_middleware(
     CORSMiddleware,
