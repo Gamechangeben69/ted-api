@@ -239,6 +239,7 @@ _TD_LABEL_MAP = {
     "planning": "Prior Information Notice",
     "veat": "Voluntary Ex Ante Transparency Notice",
     "corr": "Corrigendum",
+    "consultation": "Consultation Notice",
 }
 
 

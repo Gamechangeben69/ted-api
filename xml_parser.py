@@ -709,6 +709,7 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
         if not existing_award:
             new_award = Award(
                 tender_id=tender_id,
+                award_notice_id=tender_id,
                 lot_id=lot_db_id,
                 supplier_id=supplier_id,
                 award_date=award_data["award_date"],
@@ -719,15 +720,19 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
             )
             db.add(new_award)
         else:
-            # Fehlende Felder ergänzen
+            # Fehlende Felder ergänzen / überschreiben
             if existing_award.contract_value is None and award_data["contract_value"]:
                 existing_award.contract_value = award_data["contract_value"]
             if existing_award.offers_received is None and award_data["offers_received"]:
                 existing_award.offers_received = award_data["offers_received"]
-            if existing_award.award_date is None and award_data["award_date"]:
+            if award_data["award_date"]:
                 existing_award.award_date = award_data["award_date"]
+            if award_data.get("published_date"):
+                existing_award.published_date = award_data.get("published_date")
             if existing_award.lot_id is None and lot_db_id:
                 existing_award.lot_id = lot_db_id
+            if not existing_award.award_notice_id:
+                existing_award.award_notice_id = tender_id
 
     db.commit()
     log.info(f"  ✓ {tender_id}: {len(data['lots'])} Lose, {len(data['awards'])} Zuschläge, "
