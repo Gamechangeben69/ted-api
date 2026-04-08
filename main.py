@@ -24,7 +24,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Response, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, selectinload
@@ -143,6 +143,7 @@ for _raw in os.environ.get("API_KEYS", "").split(";"):
 
 
 def check_rate_limit(
+    response: Response,
     x_rapidapi_key: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
@@ -150,7 +151,12 @@ def check_rate_limit(
     tier  = API_KEY_TIERS.get(key, "free")
     limit = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
 
+    reset_ts = (datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     if limit >= 999_999:
+        response.headers["X-RateLimit-Limit"]     = "unlimited"
+        response.headers["X-RateLimit-Remaining"] = "unlimited"
+        response.headers["X-RateLimit-Tier"]      = tier
         return {"key": key, "tier": tier}
 
     rl  = db.get(RateLimit, key)
@@ -163,6 +169,16 @@ def check_rate_limit(
     if rl.window_start.date() < now.date():
         rl.req_count    = 0
         rl.window_start = now
+        reset_ts = (now.replace(hour=0, minute=0, second=0) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        reset_ts = (rl.window_start.replace(hour=0, minute=0, second=0) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    remaining = max(0, limit - rl.req_count)
+
+    response.headers["X-RateLimit-Limit"]     = str(limit)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    response.headers["X-RateLimit-Reset"]     = reset_ts
+    response.headers["X-RateLimit-Tier"]      = tier
 
     if rl.req_count >= limit:
         raise HTTPException(
@@ -171,14 +187,15 @@ def check_rate_limit(
                 "error":     "rate_limit_exceeded",
                 "tier":      tier,
                 "limit":     limit,
-                "resets_at": (rl.window_start + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "upgrade":   "https://rapidapi.com/your-profile/api/ted-it-tenders",
+                "remaining": 0,
+                "resets_at": reset_ts,
+                "upgrade":   "https://rapidapi.com/your-profile/api/ted-eu-procurement",
             },
         )
 
     rl.req_count += 1
     db.commit()
-    return {"key": key, "tier": tier, "remaining": limit - rl.req_count}
+    return {"key": key, "tier": tier, "remaining": remaining - 1}
 
 
 # ── Serialisierung ────────────────────────────────────────────────────────────
