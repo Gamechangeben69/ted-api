@@ -450,6 +450,15 @@ def _apply_sort(q, sort_by: str, sort_order: str, keyword: str = None):
         tsq = func.plainto_tsquery("simple", keyword)
         rank_col = func.ts_rank(Tender.search_vector, tsq)
         q = q.order_by(rank_col.desc() if desc_flag else rank_col.asc())
+    elif sort_by == "value":
+        from sqlalchemy import select as sa_select, null
+        val_sub = (
+            sa_select(func.coalesce(func.sum(Lot.estimated_value), null()))
+            .where(Lot.tender_id == Tender.id)
+            .correlate(Tender)
+            .scalar_subquery()
+        )
+        q = q.order_by(val_sub.desc().nullslast() if desc_flag else val_sub.asc().nullslast())
     elif sort_by in col_map:
         col = col_map[sort_by]
         q = q.order_by(col.desc() if desc_flag else col.asc())
