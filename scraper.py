@@ -385,6 +385,7 @@ def upsert_tender(db, mapped: dict) -> Tender:
         "award_criteria":    mapped["award_criteria"],
         "award_criteria_label":mapped["award_criteria_label"],
         "buyer_id":          buyer_id,
+        "buyer_name":        (mapped.get("contracting_auth") or "")[:500] or None,
         "updated_at":        datetime.utcnow(),
     }
 

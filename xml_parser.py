@@ -661,6 +661,11 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
         if not tender.deadline_date or earliest != tender.deadline_date:
             tender.deadline_date = earliest
 
+    # total_estimated_value auf Tender aktualisieren
+    if data.get("lots") is not None:
+        _tot = sum(ld["estimated_value"] for ld in data["lots"] if ld.get("estimated_value")) or None
+        tender.total_estimated_value = _tot
+
     # 3. Awards (Zuschläge) speichern
     for award_data in data["awards"]:
         if not award_data["supplier_name"] and award_data["contract_value"] is None:

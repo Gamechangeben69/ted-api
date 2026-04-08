@@ -113,6 +113,10 @@ class Tender(Base):
     # Verknüpfung zu Award Notice
     award_notice_id   = Column(String(50), nullable=True)  # TD=7 Dokument-Nr.
 
+    # Denormalisierte Felder für Performance
+    total_estimated_value = Column(Float, nullable=True)
+    buyer_name            = Column(String(500), nullable=True)
+
     # Timestamps
     scraped_at        = Column(DateTime, default=datetime.utcnow)
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -124,9 +128,10 @@ class Tender(Base):
     search_vector     = Column(TSVECTOR, nullable=True)
 
     __table_args__ = (
-        Index("ix_country_pub",  "country_code", "published_date"),
-        Index("ix_country_dead", "country_code", "deadline_date"),
-        Index("ix_tenders_gin",  "search_vector", postgresql_using="gin"),
+        Index("ix_country_pub",        "country_code", "published_date"),
+        Index("ix_country_dead",       "country_code", "deadline_date"),
+        Index("ix_tenders_gin",        "search_vector", postgresql_using="gin"),
+        Index("ix_tenders_total_value","total_estimated_value"),
     )
 
     def __repr__(self):

@@ -370,9 +370,7 @@ def tender_to_dict(t: Tender, detail: bool = False) -> dict:
         "award_notice_id": t.award_notice_id,
         "has_award":       bool(t.awards),
         "lot_count":       len(t.lots),
-        "total_estimated_value": sum(
-            l.estimated_value for l in t.lots if l.estimated_value
-        ) or None,
+        "total_estimated_value": t.total_estimated_value,
         "currency": next(
             (l.estimated_currency for l in t.lots if l.estimated_currency), None
         ),
@@ -392,6 +390,77 @@ def tender_to_dict(t: Tender, detail: bool = False) -> dict:
 
 
 # ── Endpunkte ─────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/countries",
+    tags=["Stats"],
+    summary="List all countries with tender counts",
+    response_description="Countries available in the dataset, sorted by tender count",
+)
+def list_countries(
+    _rate = Depends(check_rate_limit),
+    db: Session = Depends(get_db),
+):
+    """Returns all countries that have at least one tender in the database,
+    with tender counts and country names. Use the `country_code` values as
+    input for the `country` filter on GET /tenders."""
+    rows = (
+        db.query(Tender.country_code, func.count(Tender.id).label("count"))
+        .filter(Tender.country_code.isnot(None))
+        .group_by(Tender.country_code)
+        .order_by(func.count(Tender.id).desc())
+        .all()
+    )
+    return {
+        "total": len(rows),
+        "results": [
+            {
+                "country_code":  r.country_code,
+                "country_name":  _CC3_TO_NAME.get(r.country_code, r.country_code),
+                "tender_count":  r.count,
+            }
+            for r in rows if r.country_code
+        ],
+    }
+
+
+@app.get(
+    "/cpv-categories",
+    tags=["Stats"],
+    summary="List all CPV categories with tender counts",
+    response_description="CPV divisions covered by this API, sorted by tender count",
+)
+def list_cpv_categories(
+    _rate = Depends(check_rate_limit),
+    db: Session = Depends(get_db),
+):
+    """Returns all CPV divisions (2-digit codes) present in the database with
+    tender counts and labels. Use the `cpv` filter on GET /tenders with these
+    codes to filter by category (e.g. cpv=72 for IT Services)."""
+    rows = (
+        db.query(
+            Tender.cpv_category,
+            Tender.cpv_category_label,
+            func.count(Tender.id).label("count"),
+        )
+        .filter(Tender.cpv_category.isnot(None))
+        .group_by(Tender.cpv_category, Tender.cpv_category_label)
+        .order_by(func.count(Tender.id).desc())
+        .all()
+    )
+    _CPV_EN = {'09': 'Petroleum Products, Fuel & Electricity', '16': 'Agricultural Machinery', '18': 'Clothing, Footwear & Luggage', '19': 'Leather & Textile Products', '22': 'Printed Matter & Publications', '30': 'Hardware & Office Equipment', '31': 'Electrical Equipment', '32': 'Communications & Network Equipment', '33': 'Medical Devices & Pharmaceuticals', '34': 'Transport Equipment', '35': 'Security & Defence Equipment', '37': 'Sports & Leisure Equipment', '38': 'Laboratory & Precision Instruments', '39': 'Furniture & Interior Equipment', '42': 'Industrial Machinery', '43': 'Mining & Construction Machinery', '44': 'Construction Materials', '45': 'Construction Works', '48': 'Software & Information Systems', '50': 'Repair & Maintenance Services', '51': 'Installation Services', '55': 'Hotel & Catering Services', '60': 'Transport & Logistics Services', '63': 'Auxiliary Transport Services', '64': 'Postal & Telecommunications', '66': 'Financial & Insurance Services', '70': 'Real Estate Services', '71': 'Architecture & Engineering', '72': 'IT Services', '73': 'Research & Development', '75': 'Public Administration', '77': 'Agricultural & Forestry Services', '79': 'Business Services', '80': 'Education & Training', '85': 'Health & Social Services', '90': 'Environmental & Waste Services', '92': 'Cultural, Sports & Entertainment', '98': 'Other Community Services'}
+    return {
+        "total": len(rows),
+        "results": [
+            {
+                "cpv":         r.cpv_category,
+                "label":       _CPV_EN.get(r.cpv_category, r.cpv_category_label or ""),
+                "tender_count": r.count,
+            }
+            for r in rows if r.cpv_category
+        ],
+    }
+
 
 @app.get("/health", tags=["System"], summary="API health and data coverage stats")
 def health(db: Session = Depends(get_db)):
@@ -502,22 +571,13 @@ def _apply_tender_filters(q, *,
         q = q.filter(Tender.procedure == procedure.upper())
 
     if buyer_name:
-        q = q.join(Tender.buyer).filter(Buyer.name.ilike(f"%{buyer_name}%"))
+        q = q.filter(Tender.buyer_name.ilike(f"%{buyer_name}%"))
 
     if min_value is not None or max_value is not None:
-        lot_sub = (
-            q.session.query(
-                Lot.tender_id,
-                func.sum(Lot.estimated_value).label("total_val")
-            )
-            .group_by(Lot.tender_id)
-            .subquery()
-        )
-        q = q.join(lot_sub, Tender.id == lot_sub.c.tender_id)
         if min_value is not None:
-            q = q.filter(lot_sub.c.total_val >= min_value)
+            q = q.filter(Tender.total_estimated_value >= min_value)
         if max_value is not None:
-            q = q.filter(lot_sub.c.total_val <= max_value)
+            q = q.filter(Tender.total_estimated_value <= max_value)
 
     return q
 
@@ -534,14 +594,8 @@ def _apply_sort(q, sort_by: str, sort_order: str, keyword: str = None):
         rank_col = func.ts_rank(Tender.search_vector, tsq)
         q = q.order_by(rank_col.desc() if desc_flag else rank_col.asc())
     elif sort_by == "value":
-        from sqlalchemy import select as sa_select, null
-        val_sub = (
-            sa_select(func.coalesce(func.sum(Lot.estimated_value), null()))
-            .where(Lot.tender_id == Tender.id)
-            .correlate(Tender)
-            .scalar_subquery()
-        )
-        q = q.order_by(val_sub.desc().nullslast() if desc_flag else val_sub.asc().nullslast())
+        col = Tender.total_estimated_value
+        q = q.order_by(col.desc().nullslast() if desc_flag else col.asc().nullslast())
     elif sort_by in col_map:
         col = col_map[sort_by]
         q = q.order_by(col.desc() if desc_flag else col.asc())
@@ -774,6 +828,72 @@ def get_tender(
             pass  # XML-Fehler darf die Antwort nicht blockieren
 
     return tender_to_dict(t, detail=True)
+
+
+@app.get(
+    "/tenders/{tender_id}/similar",
+    tags=["Tenders"],
+    summary="Find tenders similar to a given one",
+    response_description=(
+        "Up to 20 tenders ranked by full-text similarity to the source tender's "
+        "title and description. Useful for BD teams researching recurring opportunities."
+    ),
+)
+def similar_tenders(
+    tender_id: str,
+    limit:         int  = Query(10,   ge=1, le=20,  description="Number of results to return (max 20)"),
+    same_category: bool = Query(True,              description="Restrict results to the same CPV category as the source tender"),
+    _rate = Depends(check_rate_limit),
+    db: Session = Depends(get_db),
+):
+    """Returns tenders with titles/descriptions semantically similar to the
+    requested tender, ranked by full-text relevance score. Set
+    `same_category=false` to search across all CPV categories."""
+    t = db.query(Tender).filter(Tender.id == tender_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"Tender '{tender_id}' not found.")
+
+    title = (t.title or "").strip()
+    if not title:
+        return {"source_id": tender_id, "total": 0, "results": []}
+
+    # TED titles: "Country – Category – Real content"
+    # Strip country prefix, extract meaningful words (4+ chars), build OR query
+    # so ts_rank can sort by relevance rather than requiring all terms to match.
+    import re as _re
+    _parts = title.split(" – ")
+    _raw = " – ".join(_parts[1:]).strip() if len(_parts) > 1 else title
+    _words = _re.findall(r'[\w\u00C0-\u024F]{4,}', _raw.lower())[:8]
+    if not _words:
+        return {"source_id": tender_id, "total": 0, "results": []}
+    tsq = func.to_tsquery("simple", " | ".join(_words))
+
+    q = (
+        db.query(Tender)
+        .options(
+            selectinload(Tender.buyer),
+            selectinload(Tender.lots),
+            selectinload(Tender.awards),
+        )
+        .filter(
+            Tender.id != tender_id,
+            Tender.search_vector.isnot(None),
+            Tender.search_vector.op("@@")(tsq),
+        )
+    )
+
+    if same_category and t.cpv_category:
+        q = q.filter(Tender.cpv_category == t.cpv_category)
+
+    rank_col = func.ts_rank(Tender.search_vector, tsq)
+    results = q.order_by(rank_col.desc()).limit(limit).all()
+
+    return {
+        "source_id":    tender_id,
+        "source_title": t.title,
+        "total":        len(results),
+        "results":      [tender_to_dict(r) for r in results],
+    }
 
 
 @app.get(
