@@ -22,7 +22,7 @@ import os
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,17 +34,81 @@ from enrichment import enrich_cpv, enrich_nuts
 
 # ── App-Initialisierung ───────────────────────────────────────────────────────
 
+_TAGS = [
+    {
+        "name": "Tenders",
+        "description": (
+            "Search and retrieve EU public procurement notices scraped daily from "
+            "[TED (Tenders Electronic Daily)](https://ted.europa.eu/). "
+            "Covers contract notices, award notices, prior information notices and more "
+            "across all 27 EU member states plus Norway, Switzerland and Iceland."
+        ),
+    },
+    {
+        "name": "Awards",
+        "description": (
+            "Contract award notices linked to winning suppliers. "
+            "Each award record includes the supplier name, country, contract value, "
+            "number of offers received and award date where available."
+        ),
+    },
+    {
+        "name": "Suppliers",
+        "description": (
+            "Companies and organisations that have won EU public contracts. "
+            "Includes win counts, total awarded values and per-supplier award history."
+        ),
+    },
+    {
+        "name": "Alerts",
+        "description": (
+            "Saved search profiles that are checked daily against new tender notices. "
+            "Create an alert with keyword + country + CPV filters to monitor the market."
+        ),
+    },
+    {
+        "name": "Stats",
+        "description": "Aggregated statistics on the available procurement dataset.",
+    },
+    {
+        "name": "System",
+        "description": "Health check and API metadata endpoints.",
+    },
+]
+
 app = FastAPI(
-    title="TED IT Tenders API",
+    title="TED EU Procurement API",
     description=(
-        "Real-time IT procurement notices from the EU Official Journal (TED/eTendering). "
-        "Covers all 27 EU member states + Norway, Switzerland, Iceland. "
-        "OCDS-inspired data model with lots, awards, buyer & supplier info. "
-        "Updated daily via automated scraper."
+        "## Real-time EU public procurement data\n\n"
+        "Access **6,000+ IT & technology tender notices** from the EU Official Journal "
+        "([TED — Tenders Electronic Daily](https://ted.europa.eu/)), updated every day.\n\n"
+        "### What you get\n"
+        "- **Contract Notices** — open competitions across all 27 EU member states\n"
+        "- **Contract Awards** — who won, at what price, with how many competing bids\n"
+        "- **Supplier Intelligence** — ranked contractors by win count and total value\n"
+        "- **Full-text search** — PostgreSQL tsvector search across titles and descriptions\n"
+        "- **Rich filters** — country, NUTS region, CPV code, deadline, value range, procedure type\n\n"
+        "### Data freshness\n"
+        "The scraper runs daily at 06:00 UTC and back-fills XML details automatically. "
+        "Typical latency from TED publication to API availability: **< 24 hours**.\n\n"
+        "### Coverage\n"
+        "| Field | Coverage |\n"
+        "|---|---|\n"
+        "| Description | 99.9% |\n"
+        "| NUTS region | ~77% |\n"
+        "| Estimated value | ~27% |\n"
+        "| Award date | ~54% of awards |\n"
     ),
-    version="2.0.0",
-    contact={"name": "TED IT Tenders API"},
-    license_info={"name": "EU Open Data", "url": "https://ted.europa.eu/"},
+    version="2.1.0",
+    contact={
+        "name": "TED EU Procurement API",
+        "url": "https://tedapi.pro",
+    },
+    license_info={
+        "name": "EU Open Data (CC BY 4.0)",
+        "url": "https://ted.europa.eu/",
+    },
+    openapi_tags=_TAGS,
     docs_url="/",
 )
 
@@ -561,23 +625,24 @@ def list_tenders(
 
 
 class TenderSearchRequest(BaseModel):
-    country:       Optional[str]   = None
-    nuts:          Optional[str]   = None
-    cpv:           Optional[str]   = None
-    keyword:       Optional[str]   = None
-    doc_type:      Optional[str]   = None
-    has_award:     Optional[bool]  = None
-    active:        bool            = True
-    days:          Optional[int]   = None
-    date_from:     Optional[date]  = None
-    date_to:       Optional[date]  = None
-    deadline_from: Optional[date]  = None
-    deadline_to:   Optional[date]  = None
-    min_value:     Optional[float] = None
-    max_value:     Optional[float] = None
-    procedure:     Optional[str]   = None
-    buyer_name:    Optional[str]   = None
-    sort_by:       str             = "published_date"
+    """Search body for POST /tenders/search — identical filters to GET /tenders."""
+    country:       Optional[str]   = Field(None, description="3-letter ISO country code, e.g. DEU, FRA, POL")
+    nuts:          Optional[str]   = Field(None, description="NUTS region prefix, e.g. DE2 for Bavaria")
+    cpv:           Optional[str]   = Field(None, description="CPV code prefix: 72=IT Services, 48=Software")
+    keyword:       Optional[str]   = Field(None, description="Full-text search in title and description")
+    doc_type:      Optional[str]   = Field(None, description="Notice type: competition, result, planning, cont-modif")
+    has_award:     Optional[bool]  = Field(None, description="Only tenders with a linked contract award")
+    active:        bool            = Field(True,  description="Only active tenders (submission deadline >= today)")
+    days:          Optional[int]   = Field(None, description="Published within the last N days")
+    date_from:     Optional[date]  = Field(None, description="Published on or after this date (YYYY-MM-DD)")
+    date_to:       Optional[date]  = Field(None, description="Published on or before this date (YYYY-MM-DD)")
+    deadline_from: Optional[date]  = Field(None, description="Submission deadline on or after this date")
+    deadline_to:   Optional[date]  = Field(None, description="Submission deadline on or before this date")
+    min_value:     Optional[float] = Field(None, description="Minimum estimated contract value in EUR")
+    max_value:     Optional[float] = Field(None, description="Maximum estimated contract value in EUR")
+    procedure:     Optional[str]   = Field(None, description="Procedure type code, e.g. open, restricted, negotiated")
+    buyer_name:    Optional[str]   = Field(None, description="Partial match on contracting authority name")
+    sort_by:       str             = Field("published_date", description="Sort field: published_date, deadline_date, title, value, relevance")
     sort_order:    str             = "desc"
     page:          int             = 1
     page_size:     int             = 20
@@ -699,9 +764,9 @@ def get_tender(
     response_description="Paginated list of contract awards with supplier and value info",
 )
 def list_awards(
-    country:   Optional[str] = Query(None, description="3-letter ISO country code"),
-    days:      Optional[int] = Query(None, description="Zuschläge aus den letzten N Tagen"),
-    min_value: Optional[float] = Query(None, description="Mindestwert in EUR"),
+    country:   Optional[str]   = Query(None, description="Filter by buyer country — 3-letter ISO code (e.g. DEU, FRA, POL)"),
+    days:      Optional[int]   = Query(None, description="Awards published within the last N days (uses tender publication date)"),
+    min_value: Optional[float] = Query(None, description="Minimum contract value in EUR"),
     page:      int           = Query(1,   ge=1),
     page_size: int           = Query(20,  ge=1, le=100),
     _rate = Depends(check_rate_limit),
@@ -826,8 +891,8 @@ def stats(
     response_description="Suppliers with win count and total awarded value",
 )
 def list_suppliers(
-    keyword:   Optional[str] = Query(None, description="Name search"),
-    country:   Optional[str] = Query(None, description="Supplier country code"),
+    keyword:   Optional[str] = Query(None, description="Search supplier name (case-insensitive, partial match)"),
+    country:   Optional[str] = Query(None, description="Filter by supplier home country — 3-letter ISO code (e.g. DEU, POL)"),
     page:      int           = Query(1,   ge=1),
     page_size: int           = Query(20,  ge=1, le=100),
     _rate = Depends(check_rate_limit),
