@@ -360,7 +360,25 @@ def _extract_awards(root: ET.Element) -> list[dict]:
         if tp_id not in tp_map or (tenderers and not tp_map[tp_id]):
             tp_map[tp_id] = tenderers
 
-    # ── 3. LotTender-Map: lt_id → {payable, currency, tp_id, rank} ──────────
+    # ── 2.5 SettledContract-Map: lt_id → award_date ────────────────────────
+    sc_map = {}
+    for sc_el in root.iter(T(EXT, "SettledContract")):
+        _sc_award_el = sc_el.find(T(CBC, "AwardDate"))
+        if _sc_award_el is None or not _sc_award_el.text:
+            continue
+        _parsed = _parse_date(_sc_award_el.text)
+        if _parsed is None or _parsed.year <= 2000:
+            continue  # dummy date
+        for _lt_ref in sc_el.findall(T(EXT, "LotTender")):
+            _lt_id_el = _lt_ref.find(T(CBC, "ID"))
+            if _lt_id_el is not None and _lt_id_el.text:
+                sc_map[_lt_id_el.text.strip()] = _parsed
+
+    # ── 2.6 PublicationDate (Tender-Ebene, gleich für alle Awards) ──────────
+    _pub_el = root.find(".//%s" % T(EBC, "PublicationDate"))
+    notice_published_date = _parse_date(_pub_el.text) if _pub_el is not None and _pub_el.text else None
+
+        # ── 3. LotTender-Map: lt_id → {payable, currency, tp_id, rank} ──────────
     lt_map = {}
     for lt_el in root.iter(T(EXT, "LotTender")):
         lt_id_el = lt_el.find(T(CBC, "ID"))
@@ -410,8 +428,16 @@ def _extract_awards(root: ET.Element) -> list[dict]:
             except (ValueError, TypeError):
                 pass
 
-        # Award-Datum (SettledContract/IssueDate)
-        award_date_text = first_text(lr_el, (EXT, "SettledContract"), (CBC, "IssueDate")) or                           first_text(lr_el, (CBC, "AwardDate"))
+        # Award-Datum: aus SettledContract-Map via LotTender-ID
+        award_date_val = sc_map.get(awarded_lt_id) if awarded_lt_id else None
+        # Fallback: cbc:AwardDate direkt in LotResult (aber nicht Dummy 2000-01-01)
+        if award_date_val is None:
+            raw = first_text(lr_el, (CBC, "AwardDate"))
+            if raw:
+                from datetime import date as _date2
+                pd = _parse_date(raw)
+                if pd and pd.year > 2000:
+                    award_date_val = pd
 
         # Gewinner über LotTender → TenderingParty → Organization
         supplier_name    = None
@@ -448,7 +474,8 @@ def _extract_awards(root: ET.Element) -> list[dict]:
                 "contract_value":  contract_value,
                 "currency":        currency,
                 "offers_received": offers,
-                "award_date":      _parse_date(award_date_text),
+                "award_date":      award_date_val,
+                "published_date":  notice_published_date,
             })
 
     # ── Fallback: altes TED-XML-Format (F03, cac:AwardedTenderedProject) ─────
@@ -685,6 +712,7 @@ def enrich_and_save(db, tender_id: str, force: bool = False) -> bool:
                 lot_id=lot_db_id,
                 supplier_id=supplier_id,
                 award_date=award_data["award_date"],
+                published_date=award_data.get("published_date"),
                 contract_value=award_data["contract_value"],
                 contract_currency=award_data["currency"],
                 offers_received=award_data["offers_received"],
