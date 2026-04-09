@@ -113,7 +113,7 @@ app = FastAPI(
         "url": "https://ted.europa.eu/",
     },
     openapi_tags=_TAGS,
-    docs_url="/",
+    docs_url="/docs",
 )
 
 # ── Konsistentes Error-Format ─────────────────────────────────────────────────
