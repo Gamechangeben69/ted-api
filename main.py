@@ -42,9 +42,9 @@ _TAGS = [
         "description": (
             "Search and retrieve EU public procurement notices scraped daily from "
             "[TED (Tenders Electronic Daily)](https://ted.europa.eu/). "
-            "Covers **IT & Software** (CPV 72, 48, 30), **Engineering** (71), "
-            "**Medical Devices** (33), **R&D** (73), **Business Services** (79) "
-            "across all 27 EU member states plus Norway, Switzerland and Iceland."
+            "Covers **Construction Works** (CPV 45), **IT & Software** (CPV 72, 48, 30), "
+            "**Engineering** (71), **Medical Devices** (33), **R&D** (73), "
+            "**Business Services** (79) across all 27 EU member states plus Norway, Switzerland and Iceland."
         ),
     },
     {
@@ -87,7 +87,7 @@ app = FastAPI(
         "and R&D from the EU Official Journal "
         "([TED — Tenders Electronic Daily](https://ted.europa.eu/)), updated every day.\n\n"
         "### What you get\n"
-        "- **Contract Notices** — IT, Engineering, Healthcare, Consulting & R&D across 27 EU member states\n"
+        "- **Contract Notices** — Construction, IT, Engineering, Healthcare, Consulting & R&D across 27 EU member states\n"
         "- **Contract Awards** — who won, at what price, with how many competing bids\n"
         "- **Supplier Intelligence** — ranked contractors by win count and total value\n"
         "- **Full-text search** — PostgreSQL tsvector search across titles and descriptions\n"
@@ -103,7 +103,7 @@ app = FastAPI(
         "| Estimated value | ~27% |\n"
         "| Award date | ~54% of awards |\n"
     ),
-    version="2.1.0",
+    version="2.2.0",
     contact={
         "name": "TED EU Procurement API",
         "url": "https://tedapi.pro",
@@ -666,7 +666,7 @@ def list_tenders(
     country:       Optional[str]  = Query(None, description="3-letter ISO code: DEU, FRA, NLD …"),
     nuts:          Optional[str]  = Query(None, description="NUTS region prefix, e.g. DE2 for Bavaria"),
     # Content
-    cpv:           Optional[str]  = Query(None, description="CPV prefix: 72=IT Services, 48=Software, 30=Hardware"),
+    cpv:           Optional[str]  = Query(None, description="CPV prefix: 45=Construction, 72=IT Services, 48=Software, 30=Hardware, 71=Engineering, 33=Medical, 79=Business Services"),
     keyword:       Optional[str]  = Query(None, description="Full-text search in title and description"),
     # Type
     doc_type:      Optional[str]  = Query(None, description="3=Contract Notice, 7=Award Notice, competition, result"),
@@ -750,7 +750,7 @@ class TenderSearchRequest(BaseModel):
     """Search body for POST /tenders/search — identical filters to GET /tenders."""
     country:       Optional[str]   = Field(None, description="3-letter ISO country code, e.g. DEU, FRA, POL")
     nuts:          Optional[str]   = Field(None, description="NUTS region prefix, e.g. DE2 for Bavaria")
-    cpv:           Optional[str]   = Field(None, description="CPV code prefix: 72=IT Services, 48=Software")
+    cpv:           Optional[str]   = Field(None, description="CPV code prefix: 45=Construction, 72=IT Services, 48=Software, 30=Hardware, 71=Engineering, 33=Medical, 79=Business Services")
     keyword:       Optional[str]   = Field(None, description="Full-text search in title and description")
     doc_type:      Optional[str]   = Field(None, description="Notice type: competition, result, planning, cont-modif")
     has_award:     Optional[bool]  = Field(None, description="Only tenders with a linked contract award")

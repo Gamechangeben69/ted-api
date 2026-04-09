@@ -48,6 +48,7 @@ CPV_PRAEFIX    = [
     "71",  # Architecture & Engineering
     "73",  # Research & Development
     "79",  # Business Services (Consulting, Legal, Accounting)
+    "45",  # Construction Works
 ]
 SEITEN_GROESSE = 50
 PAUSE_SEK      = 0.4
