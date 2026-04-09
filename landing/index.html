@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TED EU Procurement API — Real-time EU Tenders</title>
+  <meta name="description" content="Access 30,000+ EU procurement notices via REST API. Updated daily from TED. Filter by country, CPV, keyword. Free tier available on RapidAPI.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f0f1a;
+      --bg2: #1a1a2e;
+      --bg3: #1e1b4b;
+      --bg4: #312e81;
+      --accent: #4f46e5;
+      --accent-light: #818cf8;
+      --accent-soft: #a5b4fc;
+      --text: #e0e7ff;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --green: #86efac;
+      --yellow: #fbbf24;
+      --red: #fca5a5;
+      --white: #ffffff;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
+    a { color: var(--accent-soft); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav { position: sticky; top: 0; z-index: 100; background: rgba(15,15,26,0.9); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.07); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .nav-logo { font-weight: 700; font-size: 16px; color: var(--white); display: flex; align-items: center; gap: 8px; }
+    .nav-logo span { color: var(--accent-soft); }
+    .nav-links { display: flex; align-items: center; gap: 20px; }
+    .nav-links a { color: var(--text-muted); font-size: 14px; }
+    .nav-links a:hover { color: var(--white); text-decoration: none; }
+    .btn { display: inline-block; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: opacity .2s; }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--accent); color: var(--white); }
+    .btn-outline { background: transparent; color: var(--white); border: 1px solid rgba(255,255,255,0.25); }
+    .lang-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text-muted); padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; }
+    .lang-toggle:hover { background: rgba(255,255,255,0.14); color: var(--white); }
+
+    section { padding: 80px 24px; max-width: 1100px; margin: 0 auto; }
+    .section-label { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--accent-soft); margin-bottom: 8px; }
+    .section-title { font-size: 32px; font-weight: 700; color: var(--white); margin-bottom: 16px; }
+    .section-sub { font-size: 16px; color: var(--text-muted); margin-bottom: 40px; }
+
+    #hero { padding: 0; max-width: 100%; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 45%, #1e3a5f 100%); }
+    .hero-inner { max-width: 1100px; margin: 0 auto; padding: 80px 24px 60px; }
+    .hero-title { font-size: clamp(32px, 5vw, 52px); font-weight: 800; color: var(--white); line-height: 1.15; margin-bottom: 12px; }
+    .hero-sub { font-size: 18px; color: #c7d2fe; margin-bottom: 40px; }
+    .hero-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 48px; }
+    @media (max-width: 640px) { .hero-cards { grid-template-columns: 1fr; } }
+    .hero-card { border-radius: var(--radius); padding: 24px; }
+    .hero-card-dev { background: var(--white); }
+    .hero-card-biz { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); }
+    .hero-card-label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+    .hero-card-dev .hero-card-label { color: var(--accent); }
+    .hero-card-biz .hero-card-label { color: var(--accent-soft); }
+    .hero-card-dev p { color: #374151; font-size: 14px; margin-bottom: 16px; }
+    .hero-card-biz p { color: #e0e7ff; font-size: 14px; margin-bottom: 16px; }
+    .hero-card-dev .btn-primary { width: 100%; text-align: center; display: block; }
+    .hero-card-biz .btn-outline { width: 100%; text-align: center; display: block; }
+    .hero-stats { display: flex; gap: 32px; flex-wrap: wrap; }
+    .hero-stat { text-align: center; }
+    .hero-stat-val { font-size: 28px; font-weight: 700; color: var(--white); }
+    .hero-stat-label { font-size: 11px; color: var(--accent-soft); text-transform: uppercase; letter-spacing: 1px; }
+    .hero-divider { color: rgba(255,255,255,0.15); font-size: 24px; align-self: center; }
+
+    #live { background: var(--bg2); max-width: 100%; }
+    #live .section-inner { max-width: 1100px; margin: 0 auto; padding: 80px 24px; }
+    .tender-list { display: flex; flex-direction: column; gap: 10px; }
+    .tender-row { background: var(--bg3); border-radius: var(--radius-sm); padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .tender-title { font-size: 14px; font-weight: 600; color: var(--white); margin-bottom: 4px; }
+    .tender-meta { font-size: 12px; color: var(--accent-light); }
+    .badge { font-size: 10px; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+    .badge-active { background: rgba(134,239,172,0.12); color: var(--green); }
+    .badge-cpv { background: rgba(79,70,229,0.2); color: var(--accent-soft); }
+    .live-footer { margin-top: 16px; font-size: 13px; color: var(--text-dim); }
+
+    .use-cases-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .use-case-card { background: var(--bg2); border: 1px solid rgba(255,255,255,0.06); border-radius: var(--radius); padding: 24px; transition: border-color .2s; }
+    .use-case-card:hover { border-color: var(--accent); }
+    .use-case-icon { font-size: 32px; margin-bottom: 12px; }
+    .use-case-title { font-size: 16px; font-weight: 600; color: var(--white); margin-bottom: 4px; }
+    .use-case-meta { font-size: 12px; color: var(--accent-light); }
+
+    .features-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    @media (max-width: 640px) { .features-grid { grid-template-columns: 1fr; } }
+    .features-col-label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-soft); margin-bottom: 16px; }
+    .feature-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+    .feature-check { color: var(--green); font-size: 14px; margin-top: 2px; flex-shrink: 0; }
+    .feature-text { font-size: 14px; color: var(--text); }
+
+    .explorer-wrap { display: grid; grid-template-columns: 1fr 1.3fr; gap: 16px; }
+    @media (max-width: 700px) { .explorer-wrap { grid-template-columns: 1fr; } }
+    .explorer-form { background: var(--bg3); border-radius: var(--radius); padding: 24px; }
+    .explorer-form label { display: block; font-size: 11px; color: var(--accent-soft); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .explorer-form select, .explorer-form input { width: 100%; background: var(--bg4); color: var(--white); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; outline: none; }
+    .explorer-form select:focus, .explorer-form input:focus { border-color: var(--accent); }
+    .explorer-url { margin-top: 4px; background: var(--bg); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11px; color: var(--accent-soft); word-break: break-all; }
+    .explorer-result { background: var(--bg2); border-radius: var(--radius); padding: 24px; font-family: monospace; font-size: 12px; line-height: 1.7; overflow-x: auto; min-height: 300px; }
+    .explorer-result .key { color: var(--green); }
+    .explorer-result .str { color: var(--red); }
+    .explorer-result .num { color: var(--yellow); }
+    .explorer-result .comment { color: var(--accent-light); }
+
+    #pricing { background: var(--bg2); max-width: 100%; }
+    #pricing .section-inner { max-width: 1100px; margin: 0 auto; padding: 80px 24px; }
+    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 700px) { .pricing-grid { grid-template-columns: 1fr; } }
+    .pricing-card { background: var(--bg); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius); padding: 28px; text-align: center; }
+    .pricing-card.featured { background: linear-gradient(135deg, var(--bg3), #1e3a5f); border-color: var(--accent); }
+    .pricing-name { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-soft); margin-bottom: 8px; }
+    .pricing-price { font-size: 36px; font-weight: 800; color: var(--white); }
+    .pricing-period { font-size: 12px; color: var(--text-dim); margin-bottom: 20px; }
+    .pricing-features { list-style: none; font-size: 13px; color: var(--text-muted); line-height: 2; margin-bottom: 24px; }
+    .pricing-features li::before { content: "✓ "; color: var(--green); }
+    .pricing-btn { width: 100%; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; display: block; text-align: center; }
+    .pricing-btn-default { background: rgba(255,255,255,0.08); color: var(--white); }
+    .pricing-btn-featured { background: var(--accent); color: var(--white); }
+
+    .faq-item { border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .faq-q { width: 100%; background: none; border: none; color: var(--white); font-size: 15px; font-weight: 600; padding: 20px 0; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .faq-q:hover { color: var(--accent-soft); }
+    .faq-icon { color: var(--accent-soft); font-size: 20px; transition: transform .2s; }
+    .faq-item.open .faq-icon { transform: rotate(45deg); }
+    .faq-a { color: var(--text-muted); font-size: 14px; padding-bottom: 20px; display: none; line-height: 1.7; }
+    .faq-item.open .faq-a { display: block; }
+
+    #cta { background: linear-gradient(135deg, var(--bg3) 0%, var(--bg4) 100%); max-width: 100%; }
+    #cta .cta-inner { max-width: 1100px; margin: 0 auto; padding: 80px 24px; text-align: center; }
+    .cta-title { font-size: 36px; font-weight: 700; color: var(--white); margin-bottom: 12px; }
+    .cta-sub { font-size: 16px; color: #c7d2fe; margin-bottom: 32px; }
+    .btn-cta { background: var(--white); color: var(--accent); padding: 14px 40px; font-size: 16px; font-weight: 700; border-radius: 10px; }
+
+    footer { background: var(--bg); border-top: 1px solid rgba(255,255,255,0.06); padding: 24px; text-align: center; color: var(--text-dim); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">TED<span>api</span>.pro</div>
+  <div class="nav-links">
+    <a href="#explorer" data-en="Try it" data-de="Ausprobieren">Try it</a>
+    <a href="https://api.tedapi.pro/docs" target="_blank" data-en="API Docs" data-de="API Docs">API Docs</a>
+    <a href="#pricing" data-en="Pricing" data-de="Preise">Pricing</a>
+    <button class="lang-toggle" onclick="toggleLang()" id="lang-btn">DE</button>
+    <a class="btn btn-primary" href="https://rapidapi.com/Gamechangeben69/api/ted-eu-procurement" target="_blank" data-en="Start free" data-de="Kostenlos starten">Start free</a>
+  </div>
+</nav>
+
+<section id="hero">
+  <div class="hero-inner">
+    <div class="section-label" data-en="EU PROCUREMENT API" data-de="EU-BESCHAFFUNGS-API">EU PROCUREMENT API</div>
+    <h1 class="hero-title" data-en="Real-time EU procurement intelligence." data-de="EU-Ausschreibungen in Echtzeit.">Real-time EU procurement intelligence.</h1>
+    <p class="hero-sub" data-en="30,000+ tenders across 45 countries — updated every day from the EU Official Journal." data-de="30.000+ Ausschreibungen aus 45 Ländern — täglich aktualisiert aus dem EU-Amtsblatt.">30,000+ tenders across 45 countries — updated every day from the EU Official Journal.</p>
+    <div class="hero-cards">
+      <div class="hero-card hero-card-dev">
+        <div class="hero-card-label" data-en="👨‍💻 FOR DEVELOPERS" data-de="👨‍💻 FÜR ENTWICKLER">👨‍💻 FOR DEVELOPERS</div>
+        <p data-en="REST API · JSON · OpenAPI 3.0<br>Filter by country, CPV code, keyword, value range and more." data-de="REST API · JSON · OpenAPI 3.0<br>Nach Land, CPV-Code, Stichwort, Wert und mehr filtern.">REST API · JSON · OpenAPI 3.0<br>Filter by country, CPV code, keyword, value range and more.</p>
+        <a class="btn btn-primary" href="https://rapidapi.com/Gamechangeben69/api/ted-eu-procurement" target="_blank" data-en="Get API Key — Free →" data-de="API-Key holen — kostenlos →">Get API Key — Free →</a>
+      </div>
+      <div class="hero-card hero-card-biz">
+        <div class="hero-card-label" data-en="🏢 FOR BUSINESS TEAMS" data-de="🏢 FÜR BUSINESS-TEAMS">🏢 FOR BUSINESS TEAMS</div>
+        <p data-en="Find EU public contracts before your competitors. IT · Construction · Medical · Engineering." data-de="EU-Ausschreibungen früher finden als die Konkurrenz. IT · Bau · Medizin · Engineering.">Find EU public contracts before your competitors. IT · Construction · Medical · Engineering.</p>
+        <a class="btn btn-outline" href="#explorer" data-en="Browse live tenders →" data-de="Live-Ausschreibungen durchsuchen →">Browse live tenders →</a>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hero-stat-val" id="stat-tenders">18,267</div><div class="hero-stat-label" data-en="Tenders" data-de="Ausschreibungen">Tenders</div></div>
+      <div class="hero-divider">|</div>
+      <div class="hero-stat"><div class="hero-stat-val">45</div><div class="hero-stat-label" data-en="Countries" data-de="Länder">Countries</div></div>
+      <div class="hero-divider">|</div>
+      <div class="hero-stat"><div class="hero-stat-val">&lt;24h</div><div class="hero-stat-label" data-en="Latency" data-de="Latenz">Latency</div></div>
+      <div class="hero-divider">|</div>
+      <div class="hero-stat"><div class="hero-stat-val">99.9%</div><div class="hero-stat-label" data-en="With description" data-de="Mit Beschreibung">With description</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="live">
+  <div class="section-inner">
+    <div class="section-label" data-en="LIVE DATA" data-de="LIVE-DATEN">LIVE DATA</div>
+    <h2 class="section-title" data-en="Current tenders — published today" data-de="Aktuelle Ausschreibungen — heute veröffentlicht">Current tenders — published today</h2>
+    <div id="live-loading" data-en="Loading live data…" data-de="Lade Live-Daten…">Loading live data…</div>
+    <div class="tender-list" id="tender-list" style="display:none"></div>
+    <div class="live-footer" id="live-footer" style="display:none">
+      <span id="live-count"></span>
+      <a href="#explorer" data-en="→ Search all tenders" data-de="→ Alle Ausschreibungen durchsuchen">→ Search all tenders</a>
+    </div>
+  </div>
+</section>
+
+<section id="use-cases">
+  <div class="section-label" data-en="INDUSTRIES" data-de="BRANCHEN">INDUSTRIES</div>
+  <h2 class="section-title" data-en="The right tenders for every industry" data-de="Die richtigen Ausschreibungen für jede Branche">The right tenders for every industry</h2>
+  <div class="use-cases-grid">
+    <div class="use-case-card"><div class="use-case-icon">💻</div><div class="use-case-title" data-en="IT &amp; Software" data-de="IT &amp; Software">IT &amp; Software</div><div class="use-case-meta">CPV 72, 48, 30 · 3,547 tenders</div></div>
+    <div class="use-case-card"><div class="use-case-icon">🏗️</div><div class="use-case-title" data-en="Construction" data-de="Bauarbeiten">Construction</div><div class="use-case-meta">CPV 45 · 3,373 tenders</div></div>
+    <div class="use-case-card"><div class="use-case-icon">🏥</div><div class="use-case-title" data-en="Medical &amp; Pharma" data-de="Medizin &amp; Pharma">Medical &amp; Pharma</div><div class="use-case-meta">CPV 33 · 6,664 tenders</div></div>
+    <div class="use-case-card"><div class="use-case-icon">⚙️</div><div class="use-case-title" data-en="Engineering" data-de="Ingenieurwesen">Engineering</div><div class="use-case-meta">CPV 71 · 5,051 tenders</div></div>
+    <div class="use-case-card"><div class="use-case-icon">💼</div><div class="use-case-title" data-en="Business Services" data-de="Unternehmensdienstleistungen">Business Services</div><div class="use-case-meta">CPV 79 · 2,617 tenders</div></div>
+    <div class="use-case-card"><div class="use-case-icon">🔬</div><div class="use-case-title" data-en="Research &amp; Development" data-de="Forschung &amp; Entwicklung">Research &amp; Development</div><div class="use-case-meta">CPV 73 · 1,200+ tenders</div></div>
+  </div>
+</section>
+
+<section id="features" style="background: var(--bg2); max-width: 100%; padding: 0;">
+  <div style="max-width:1100px;margin:0 auto;padding:80px 24px">
+    <div class="section-label" data-en="FEATURES" data-de="FUNKTIONEN">FEATURES</div>
+    <h2 class="section-title" data-en="Everything you need" data-de="Alles was du brauchst">Everything you need</h2>
+    <div class="features-grid">
+      <div>
+        <div class="features-col-label" data-en="👨‍💻 FOR DEVELOPERS" data-de="👨‍💻 FÜR ENTWICKLER">👨‍💻 FOR DEVELOPERS</div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="REST API · JSON · OpenAPI 3.0" data-de="REST API · JSON · OpenAPI 3.0">REST API · JSON · OpenAPI 3.0</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="Full-text search (PostgreSQL FTS)" data-de="Volltextsuche (PostgreSQL FTS)">Full-text search (PostgreSQL FTS)</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="10+ filter parameters (country, CPV, value, deadline…)" data-de="10+ Filterparameter (Land, CPV, Wert, Deadline…)">10+ filter parameters</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="X-RateLimit-* headers for quota tracking" data-de="X-RateLimit-* Headers für Quota-Tracking">X-RateLimit-* headers</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="Swagger docs at api.tedapi.pro/docs" data-de="Swagger-Docs unter api.tedapi.pro/docs">Swagger docs at api.tedapi.pro/docs</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="Similar tenders endpoint (FTS-based)" data-de="Ähnliche Ausschreibungen (FTS-basiert)">Similar tenders endpoint</span></div>
+      </div>
+      <div>
+        <div class="features-col-label" data-en="🏢 FOR BUSINESS" data-de="🏢 FÜR BUSINESS">🏢 FOR BUSINESS</div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="Daily updates — &lt;24h latency from EU Official Journal" data-de="Tägliche Updates — &lt;24h Latenz vom EU-Amtsblatt">Daily updates — &lt;24h latency</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="45 countries, 43 CPV categories" data-de="45 Länder, 43 CPV-Kategorien">45 countries, 43 CPV categories</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="Saved search alerts (POST /alerts)" data-de="Gespeicherte Suchalerts (POST /alerts)">Saved search alerts</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="Award data — who won, at what price" data-de="Zuschlagsdaten — wer hat gewonnen, zu welchem Preis">Award data with supplier intelligence</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="NUTS region filtering (e.g. Bavaria, Île-de-France)" data-de="NUTS-Regionsfilter (z.B. Bayern, Île-de-France)">NUTS region filtering</span></div>
+        <div class="feature-item"><span class="feature-check">✓</span><span class="feature-text" data-en="Lot-level detail with estimated values" data-de="Losniveau-Details mit Schätzwerten">Lot-level detail with estimated values</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="explorer">
+  <div class="section-label" data-en="TRY IT LIVE" data-de="DIREKT AUSPROBIEREN">TRY IT LIVE</div>
+  <h2 class="section-title" data-en="Query the API right now" data-de="API jetzt abfragen">Query the API right now</h2>
+  <p class="section-sub" data-en="No sign-up needed for this demo. Free tier: 50 requests/day." data-de="Für diese Demo keine Anmeldung nötig. Free-Tier: 50 Anfragen/Tag.">No sign-up needed for this demo. Free tier: 50 requests/day.</p>
+  <div class="explorer-wrap">
+    <div class="explorer-form">
+      <label for="ex-country" data-en="Country" data-de="Land">Country</label>
+      <select id="ex-country" onchange="updateExplorerUrl()">
+        <option value="">All countries</option>
+        <option value="DEU" selected>🇩🇪 Germany</option>
+        <option value="FRA">🇫🇷 France</option>
+        <option value="POL">🇵🇱 Poland</option>
+        <option value="ITA">🇮🇹 Italy</option>
+        <option value="ESP">🇪🇸 Spain</option>
+        <option value="NLD">🇳🇱 Netherlands</option>
+        <option value="AUT">🇦🇹 Austria</option>
+        <option value="BEL">🇧🇪 Belgium</option>
+        <option value="SWE">🇸🇪 Sweden</option>
+        <option value="CHE">🇨🇭 Switzerland</option>
+      </select>
+      <label for="ex-cpv" data-en="CPV Category" data-de="CPV-Kategorie">CPV Category</label>
+      <select id="ex-cpv" onchange="updateExplorerUrl()">
+        <option value="">All categories</option>
+        <option value="72" selected>72 — IT Services</option>
+        <option value="48">48 — Software</option>
+        <option value="45">45 — Construction</option>
+        <option value="33">33 — Medical</option>
+        <option value="71">71 — Engineering</option>
+        <option value="79">79 — Business Services</option>
+        <option value="73">73 — R&amp;D</option>
+        <option value="30">30 — Hardware</option>
+      </select>
+      <label for="ex-keyword" data-en="Keyword" data-de="Stichwort">Keyword</label>
+      <input type="text" id="ex-keyword" placeholder="e.g. cloud, cybersecurity…" oninput="updateExplorerUrl()" />
+      <button class="btn btn-primary" style="width:100%;padding:10px;font-size:14px" onclick="runExplorer()" data-en="▶ Run Query" data-de="▶ Abfrage starten">▶ Run Query</button>
+      <div id="explorer-status" style="font-size:12px;color:var(--text-dim);margin-top:8px"></div>
+      <div class="explorer-url" id="explorer-url">https://api.tedapi.pro/tenders?country=DEU&amp;cpv=72&amp;active=true&amp;page_size=5</div>
+    </div>
+    <div class="explorer-result" id="explorer-result">
+      <span class="comment">// Click "Run Query" to see live results</span>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="section-inner">
+    <div class="section-label" data-en="PRICING" data-de="PREISE">PRICING</div>
+    <h2 class="section-title" data-en="Start for free" data-de="Kostenlos starten">Start for free</h2>
+    <p class="section-sub" data-en="All plans via RapidAPI. No credit card required for Free." data-de="Alle Pläne über RapidAPI. Für Free keine Kreditkarte nötig.">All plans via RapidAPI. No credit card required for Free.</p>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <div class="pricing-name">FREE</div>
+        <div class="pricing-price">$0</div>
+        <div class="pricing-period" data-en="/month" data-de="/Monat">/month</div>
+        <ul class="pricing-features">
+          <li data-en="50 requests / day" data-de="50 Anfragen / Tag">50 requests / day</li>
+          <li data-en="All endpoints" data-de="Alle Endpoints">All endpoints</li>
+          <li data-en="No credit card" data-de="Keine Kreditkarte">No credit card</li>
+        </ul>
+        <a class="pricing-btn pricing-btn-default" href="https://rapidapi.com/Gamechangeben69/api/ted-eu-procurement" target="_blank" data-en="Get started" data-de="Jetzt starten">Get started</a>
+      </div>
+      <div class="pricing-card featured">
+        <div class="pricing-name">BASIC ⭐</div>
+        <div class="pricing-price">$9.99</div>
+        <div class="pricing-period" data-en="/month" data-de="/Monat">/month</div>
+        <ul class="pricing-features">
+          <li data-en="500 requests / day" data-de="500 Anfragen / Tag">500 requests / day</li>
+          <li data-en="All endpoints" data-de="Alle Endpoints">All endpoints</li>
+          <li data-en="Email support" data-de="E-Mail-Support">Email support</li>
+        </ul>
+        <a class="pricing-btn pricing-btn-featured" href="https://rapidapi.com/Gamechangeben69/api/ted-eu-procurement" target="_blank" data-en="Get Basic" data-de="Basic holen">Get Basic</a>
+      </div>
+      <div class="pricing-card">
+        <div class="pricing-name">PRO</div>
+        <div class="pricing-price">$49.99</div>
+        <div class="pricing-period" data-en="/month" data-de="/Monat">/month</div>
+        <ul class="pricing-features">
+          <li data-en="Unlimited requests" data-de="Unbegrenzte Anfragen">Unlimited requests</li>
+          <li data-en="All endpoints" data-de="Alle Endpoints">All endpoints</li>
+          <li data-en="Priority support" data-de="Priority-Support">Priority support</li>
+        </ul>
+        <a class="pricing-btn pricing-btn-default" href="https://rapidapi.com/Gamechangeben69/api/ted-eu-procurement" target="_blank" data-en="Get Pro" data-de="Pro holen">Get Pro</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="section-label">FAQ</div>
+  <h2 class="section-title" data-en="Frequently asked questions" data-de="Häufige Fragen">Frequently asked questions</h2>
+  <div style="max-width:700px">
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)"><span data-en="Where does the data come from?" data-de="Woher kommen die Daten?">Where does the data come from?</span><span class="faq-icon">+</span></button>
+      <div class="faq-a" data-en="Directly from TED (Tenders Electronic Daily) — the official EU procurement portal. We scrape and enrich the data daily using the TED API v3 and eForms XML." data-de="Direkt von TED (Tenders Electronic Daily) — dem offiziellen EU-Ausschreibungsportal. Wir scrapen und reichern die Daten täglich über die TED API v3 und eForms-XML an.">Directly from TED (Tenders Electronic Daily) — the official EU procurement portal. We scrape and enrich the data daily using the TED API v3 and eForms XML.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)"><span data-en="How fresh is the data?" data-de="Wie aktuell sind die Daten?">How fresh is the data?</span><span class="faq-icon">+</span></button>
+      <div class="faq-a" data-en="The scraper runs daily at 06:00 UTC. New notices are typically available within 24 hours of EU Official Journal publication." data-de="Der Scraper läuft täglich um 06:00 UTC. Neue Bekanntmachungen sind typischerweise innerhalb von 24 Stunden verfügbar.">The scraper runs daily at 06:00 UTC. New notices are typically available within 24 hours.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)"><span data-en="Which countries are covered?" data-de="Welche Länder sind abgedeckt?">Which countries are covered?</span><span class="faq-icon">+</span></button>
+      <div class="faq-a" data-en="All 27 EU member states plus Norway, Switzerland and Iceland — 45 countries total." data-de="Alle 27 EU-Mitgliedstaaten plus Norwegen, Schweiz und Island — 45 Länder insgesamt.">All 27 EU member states plus Norway, Switzerland and Iceland — 45 countries total.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggleFaq(this)"><span data-en="Do I need a RapidAPI account?" data-de="Brauche ich einen RapidAPI-Account?">Do I need a RapidAPI account?</span><span class="faq-icon">+</span></button>
+      <div class="faq-a" data-en="Yes — the API is distributed via RapidAPI. The Free plan is completely free and gives you 50 requests per day." data-de="Ja — die API wird über RapidAPI vertrieben. Der Free-Plan ist völlig kostenlos und gibt dir 50 Anfragen pro Tag.">Yes — the Free plan is completely free and gives you 50 requests per day.</div>
+    </div>
+  </div>
+</section>
+
+<section id="cta">
+  <div class="cta-inner">
+    <h2 class="cta-title" data-en="Ready to start?" data-de="Bereit loszulegen?">Ready to start?</h2>
+    <p class="cta-sub" data-en="Free plan — no credit card required." data-de="Free-Plan — keine Kreditkarte erforderlich.">Free plan — no credit card required.</p>
+    <a class="btn btn-cta" href="https://rapidapi.com/Gamechangeben69/api/ted-eu-procurement" target="_blank" data-en="Start free on RapidAPI →" data-de="Kostenlos auf RapidAPI starten →">Start free on RapidAPI →</a>
+  </div>
+</section>
+
+<footer>
+  <p>© 2026 tedapi.pro — Data source: <a href="https://ted.europa.eu" target="_blank">TED (Tenders Electronic Daily)</a> · EU Open Data (CC BY 4.0) · <a href="https://api.tedapi.pro/docs" target="_blank">API Docs</a></p>
+</footer>
+
+<script>
+  let lang = 'en';
+  function toggleLang() {
+    lang = lang === 'en' ? 'de' : 'en';
+    document.getElementById('lang-btn').textContent = lang === 'en' ? 'DE' : 'EN';
+    document.querySelectorAll('[data-en]').forEach(el => {
+      const txt = el.getAttribute('data-' + lang);
+      if (txt) el.innerHTML = txt;
+    });
+  }
+
+  async function loadLiveData() {
+    try {
+      const r = await fetch('https://api.tedapi.pro/tenders?active=true&page_size=5&sort_by=published_date');
+      const data = await r.json();
+      document.getElementById('live-loading').style.display = 'none';
+      const list = document.getElementById('tender-list');
+      list.style.display = 'flex';
+      document.getElementById('live-footer').style.display = 'block';
+      document.getElementById('live-count').textContent = data.meta.total.toLocaleString() + ' active tenders total · ';
+      list.innerHTML = data.results.map(t => `
+        <div class="tender-row">
+          <div>
+            <div class="tender-title">${(t.title || 'Untitled').substring(0, 90)}${(t.title || '').length > 90 ? '…' : ''}</div>
+            <div class="tender-meta">${t.location.country || t.location.country_code} · ${t.buyer && t.buyer.name ? t.buyer.name.substring(0, 50) : '—'} · CPV ${t.cpv.category || '—'}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <span class="badge badge-cpv">${t.cpv.category_label || 'CPV ' + t.cpv.category}</span>
+            ${t.active ? '<span class="badge badge-active">Active</span>' : ''}
+          </div>
+        </div>`).join('');
+    } catch(e) {
+      document.getElementById('live-loading').textContent = 'Could not load live data.';
+    }
+  }
+  loadLiveData();
+
+  function buildExplorerUrl() {
+    const country = document.getElementById('ex-country').value;
+    const cpv = document.getElementById('ex-cpv').value;
+    const keyword = document.getElementById('ex-keyword').value.trim();
+    let url = 'https://api.tedapi.pro/tenders?active=true&page_size=5';
+    if (country) url += '&country=' + country;
+    if (cpv) url += '&cpv=' + cpv;
+    if (keyword) url += '&keyword=' + encodeURIComponent(keyword);
+    return url;
+  }
+
+  function updateExplorerUrl() {
+    document.getElementById('explorer-url').textContent = buildExplorerUrl();
+  }
+
+  function syntaxHighlight(json) {
+    return JSON.stringify(json, null, 2)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, m => {
+        if (/^"/.test(m)) return /:$/.test(m) ? '<span class="key">' + m + '</span>' : '<span class="str">' + m + '</span>';
+        if (/true|false|null/.test(m)) return '<span class="comment">' + m + '</span>';
+        return '<span class="num">' + m + '</span>';
+      });
+  }
+
+  async function runExplorer() {
+    const url = buildExplorerUrl();
+    const resultEl = document.getElementById('explorer-result');
+    const statusEl = document.getElementById('explorer-status');
+    resultEl.innerHTML = '<span class="comment">// Loading…</span>';
+    try {
+      const t0 = Date.now();
+      const r = await fetch(url);
+      const ms = Date.now() - t0;
+      const data = await r.json();
+      statusEl.textContent = r.status + ' OK · ' + ms + 'ms · ' + (data.meta ? data.meta.total + ' total results' : '');
+      resultEl.innerHTML = '<pre>' + syntaxHighlight({ meta: data.meta, results: (data.results || []).slice(0, 2) }) + '</pre>';
+    } catch(e) {
+      resultEl.innerHTML = '<span class="comment">// Error: ' + e.message + '</span>';
+    }
+  }
+
+  updateExplorerUrl();
+
+  function toggleFaq(btn) {
+    btn.closest('.faq-item').classList.toggle('open');
+  }
+</script>
+</body>
+</html>
